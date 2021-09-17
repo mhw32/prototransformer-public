@@ -1,0 +1,43 @@
+{
+    "exp_base": null,
+    "exp_name": "newsgroup_1shot5way_no_pretrain",
+    "agent": "NLPPrototypeNetAgent",
+    "cuda": true,
+    "gpu_device": 8,
+    "seed": 42,
+    "data_loader_workers": 4,
+    "dataset": {
+        "name": "newsgroup",
+        "train": {
+            "n_ways": 5,
+            "n_shots": 1,
+            "n_queries": 5,
+            "smlmt_tasks_factor": 0.1
+        },
+        "test": {
+            "n_queries": 10
+        }
+    },
+    "optim": {
+        "batch_size": 1,
+        "learning_rate": 1e-4,
+        "weight_decay": 0,
+        "patience": 1000,
+        "num_epochs": 30,
+        "warmup_steps": 10000,
+        "use_scheduler": true
+    },
+    "model": {
+        "name": "roberta_scratch",
+        "config": "roberta-base",
+        "d_model": 768,
+        "task_tam": true,
+        "finetune": true,
+        "finetune_layers": 3
+    },
+    "validate": true,
+    "validate_freq": 1,
+    "copy_checkpoint_freq": 10,
+    "continue_exp_dir": null,
+    "continue_exp_name": null
+}

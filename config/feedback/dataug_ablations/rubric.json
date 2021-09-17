@@ -1,0 +1,59 @@
+{
+    "exp_base": null,
+    "exp_name": "experiment_dataaug_ablations_rubric",
+    "agent": "CodePrototypeNetAgent",
+    "cuda": true,
+    "gpu_device": 8,
+    "seed": 42,
+    "data_loader_workers": 4,
+    "dataset": {
+        "train": {
+            "augment_by_names": false,
+            "augment_by_rubric": true,
+            "roberta_rubric": true,
+            "roberta_prompt": true,
+            "n_shots": 10,
+            "conservative": true,
+            "cloze_tasks_factor": 0,
+            "execution_tasks_factor": 0,
+            "smlmt_tasks_factor": 0
+        },
+        "test": {
+            "n_queries": 10
+        },
+        "train_frac": 0.9,
+        "hold_out_split": true,
+        "enforce_binary": true,
+        "obfuscate_names": true,
+        "roberta_tokenize": false,
+        "max_num_var": 100,
+        "max_num_func": 10,
+        "max_seq_len": 512,
+        "min_occ": 1
+    },
+    "optim": {
+        "batch_size": 1,
+        "learning_rate": 1e-4,
+        "weight_decay": 0,
+        "patience": 1000,
+        "num_epochs": 200,
+        "warmup_steps": 10000,
+        "use_scheduler": true
+    },
+    "model": {
+        "name": "transformer",
+        "d_model": 768,
+        "n_head": 8,
+        "n_encoder_layers": 8,
+        "d_ff": 2048,
+        "task_concat": false,
+        "task_tam": false,
+        "task_tadam": false,
+        "task_adapter": true
+    },
+    "validate": true,
+    "validate_freq": 1,
+    "copy_checkpoint_freq": 10,
+    "continue_exp_dir": null,
+    "continue_exp_name": null
+}
