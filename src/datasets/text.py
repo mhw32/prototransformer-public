@@ -369,8 +369,3 @@ def _load_json(path, max_seq_len=512):
                     item[k] = row[k]
             data.append(item)
     return data
-
-
-if __name__ == "__main__":
-    dset = FewShot20News("/data5/wumike/metacode/nlp/few_shot_text/20news.json")
-    dset.__getitem__(0)

@@ -1,24 +1,14 @@
-import os
-import io
-import re
-import json
-import copy
-import math
-import random
-import torch
-import hashlib
-import numpy as np
-import pandas as pd
-from glob import glob
+import os, io, re, json, copy, random, hashlib
+import torch, numpy as np, pandas as pd
 from tqdm import tqdm
+import tokenize as pythonlang
+from transformers import RobertaTokenizer
 from collections import defaultdict, Counter
 from torch.utils.data.dataset import Dataset
 
 from src.models.sentencebert import SentenceBERT
 from src.utils.utils import OrderedCounter, string_concat
 from src.utils.python_utils import PYTHON_KEYWORDS, camel_to_snake
-from transformers import RobertaTokenizer
-import tokenize as pythonlang
 
 PAD_TOKEN = '<pad>'
 UNK_TOKEN = '<unk>'
@@ -30,43 +20,21 @@ EXIT_SCOPE_TOKEN = '</scope>'
 NEWLINE_TOKEN = '<newline>'
 LEEWAY = 5
 
-CCN_DATA_ROOT = '/data5/wumike'
-PURPLEBOOK_ROOT = 'metacode/purplebook_data_clean_v2.csv'
-PURPLEBOOK_RUBRIC = 'metacode/rubrics.csv'
-PURPLEBOOK_PROMPT = 'metacode/questions.csv'
-CS106A_ROOT = 'metacode/assignments'
-CS106A_PROMPT = 'metacode/assignments/questions.csv'
-CIP20_ROOT = 'metacode/code_in_place/code_in_place_data_clean.csv'
-CIP20_PROMPT = 'metacode/code_in_place/questions.csv'
-# NOTE: we will not will use CIP21 for training!
-CIP21_ROOT = 'metacode/code_in_place/2021/human-grades-2021-v2.csv'
-CIP21_RUBRIC = 'metacode/code_in_place/2021/rubric-for-cip-2021.csv'
-CIP21_PROMPT = 'metacode/code_in_place/2021/questions.csv'
-CIP21_MERGED_ROOT = 'metacode/code_in_place/2021/code_in_place_data_merged.csv'
-CACHE_ROOT = 'metacode/cache'
-EMBED_CACHE_ROOT = 'metacode/embed_cache'
 
-
-class MetaPurpleBook(Dataset):
-    r"""
-    Dataset for PurpleBook meta training. 
+class MetaExamSolutions(Dataset):
+    """
+    Dataset of student solutions to programming exams for meta training.
     """
     def __init__(
             self,
             n_shots,
             n_queries,
-            data_root=CCN_DATA_ROOT,
-            purplebook_path=PURPLEBOOK_ROOT,
-            purplebook_rubric=PURPLEBOOK_RUBRIC,
-            purplebook_prompt=PURPLEBOOK_PROMPT,
-            cs106a_path=CS106A_ROOT,
-            cs106a_prompt=CS106A_PROMPT,
-            cip20_path=CIP20_ROOT,
-            cip20_prompt=CIP20_PROMPT,
-            cache_path=CACHE_ROOT,           # where to cache RoBerta embeddings of rubric names if roberta_rubric = True
+            data_root=None,                  # root of the dataset
+            exam_path=None,                  # path to exam files from root
+            exam_rubric=None,                # path to rubrics from root
+            exam_prompt=None,                # path to questions/prompts from root
+            cache_path=None,                 # where to cache RoBerta embeddings of rubric names if roberta_rubric = True
             vocab=None,
-            add_cs106_assignments=False,     # add CS106 Assignments
-            add_cip20=True,                  # add CiP2020  
             obfuscate_names=True,            # if True, replace variable names with <VAR:XX> and function names with <FUNC:XX>
             augment_by_names=True,           # if True, randomly swap variable names in training
             augment_by_rubric=True,          # if True, randomly shuffle programs with identical rubrics in training
@@ -80,8 +48,8 @@ class MetaPurpleBook(Dataset):
             smlmt_tasks_factor=0,            # if >0, create tasks from SMLMT (https://arxiv.org/pdf/2009.08445)
             max_num_var=100,                 # if obfuscate_names = True, cap out at XX variable names
             max_num_func=10,                 # if obfuscate_names = True, cap out at XX function names
-            max_seq_len=1000,
-            min_occ=1,
+            max_seq_len=1000,                # maximum # of tokens of student code
+            min_occ=1,                       # minimum number of occurences to keep a token in vocab (only used if not RoBERTa)
             conservative=True,               # if not conservative, keep more tasks (even unbalanced onces)
             train=True,
             train_frac=0.9,
@@ -91,8 +59,7 @@ class MetaPurpleBook(Dataset):
             fix_seed=True,
             pad_to_max_num_class=False,      # if True, all tasks are padded to the maximum # of classes
         ):
-        super(MetaPurpleBook, self).__init__()
-
+        super(MetaExamSolutions, self).__init__()
         cache_path = os.path.join(data_root, cache_path)
 
         if not os.path.isdir(cache_path):
@@ -124,13 +91,9 @@ class MetaPurpleBook(Dataset):
         self.max_num_func = max_num_func
         self.max_seq_len = max_seq_len
         self.min_occ = min_occ
-        self.purplebook_path = os.path.join(data_root, purplebook_path)
-        self.purplebook_rubric = os.path.join(data_root, purplebook_rubric)
-        self.purplebook_prompt = os.path.join(data_root, purplebook_prompt)
-        self.cs106a_path = os.path.join(data_root, cs106a_path)
-        self.cs106a_prompt = os.path.join(data_root, cs106a_prompt)
-        self.cip20_path = os.path.join(data_root, cip20_path)
-        self.cip20_prompt = os.path.join(data_root, cip20_prompt)
+        self.exam_path = os.path.join(data_root, exam_path)
+        self.exam_rubric = os.path.join(data_root, exam_rubric)
+        self.exam_prompt = os.path.join(data_root, exam_prompt)
         self.fix_seed = fix_seed
         self.n_shots = n_shots
         self.n_queries = n_queries
@@ -141,62 +104,20 @@ class MetaPurpleBook(Dataset):
         self.roberta_tokenize = roberta_tokenize
         self.obfuscate_names = obfuscate_names
         self.pad_to_max_num_class = pad_to_max_num_class
-        self.add_cs106_assignments = add_cs106_assignments
-        self.add_cip20 = add_cip20
         self.roberta_device = roberta_device
 
-        print('loading purplebook...')
-        programs_pbook, traces_pbook, indices_pbook, labels_pbook, tasks_pbook, \
-        questions_pbook, task_splits_pbook, task_classes_pbook, task_stats_pbook, \
-        rubrics_pbook, prompts_pbook, equivalences_pbook = \
-            self.load_purplebook_data()
+        print('loading exams...')
+        programs, traces, indices, labels, tasks, \
+        questions, task_splits, task_classes, task_stats, \
+        rubrics, prompts, equivalences = self.load_exam_data()
 
-        programs_list = [programs_pbook]
-        traces_list = [traces_pbook]
-        indices_list = [indices_pbook]
-        labels_list = [labels_pbook]
-        tasks_list = [tasks_pbook]
-        questions_list = [questions_pbook]
-        task_splits_list = [task_splits_pbook]
-        task_classes_list = [task_classes_pbook]
-        task_stats_list = [task_stats_pbook]
-        rubrics_list = [rubrics_pbook]
-        prompts_list = [prompts_pbook]
-        equivalences_list = [equivalences_pbook]
-
-        if add_cs106_assignments:
-            print('loading cs106a... compiling...')
-            programs_cs106, traces_cs106, indices_cs106, labels_cs106, tasks_cs106, \
-            questions_cs106, task_splits_cs106, task_classes_cs106, task_stats_cs106, \
-            rubrics_cs106, prompts_cs106, equivalences_cs106 = \
-                self.load_cs106a_data()
-            programs_list.append(programs_cs106)
-            traces_list.append(traces_cs106)
-            indices_list.append(indices_cs106)
-            labels_list.append(labels_cs106)
-            tasks_list.append(tasks_cs106)
-            questions_list.append(questions_cs106)
-            task_splits_list.append(task_splits_cs106)
-            task_classes_list.append(task_classes_cs106)
-            task_stats_list.append(task_stats_cs106)
-            rubrics_list.append(rubrics_cs106)
-            prompts_list.append(prompts_cs106)
-            equivalences_list.append(equivalences_cs106)
-
-        """
-        vocab_pbook = self.create_vocab(programs_pbook, traces_pbook, [None for _ in range(len(traces_pbook))])
-        vocab_cs106 = self.create_vocab(programs_cs106, traces_cs106, [None for _ in range(len(traces_cs106))])
-        pickle.dump(vocab_pbook, open('./vocab_pbook.pkl', 'wb'))
-        pickle.dump(vocab_cs106, open('./vocab_cs106.pkl', 'wb'))
-        """
-
+        # NOTE: loading assignment data has been masked in public repo
         programs, traces, indices, labels, tasks, questions, task_splits, \
         task_classes, task_stats, init_task_types, rubrics, prompts, equivalences = \
             self.combine_data_sources(
-                programs_list, traces_list, indices_list, labels_list, tasks_list,
-                questions_list, task_splits_list, task_classes_list, task_stats_list,
-                rubrics_list, prompts_list, equivalences_list,
-            )
+                [programs], [traces], [indices], [labels], [tasks],
+                [questions], [task_splits], [task_classes], [task_stats],
+                [rubrics], [prompts], [equivalences])
         self.task_classes = task_classes
         self.task_stats = task_stats
   
@@ -207,8 +128,7 @@ class MetaPurpleBook(Dataset):
         else:
             # meta tasks train test split randomly based on task.
             split_indices = self.train_test_split_by_question(
-                questions, train=train, train_frac=train_frac,
-            )
+                questions, train=train, train_frac=train_frac)
         
         # indices : remaining indices in the current split
         indices = [indices[i] for i in split_indices]
@@ -220,14 +140,9 @@ class MetaPurpleBook(Dataset):
 
         if roberta_rubric:
             rubric_bert_cache = self.roberta_embed_rubrics(
-                rubrics, 
-                cache_path,
-                key='human_label',
-            )
+                rubrics, cache_path, key='human_label')
             prompt_bert_cache = self.roberta_embed_prompts(
-                prompts,
-                cache_path,
-            )
+                prompts, cache_path)
         else:
             rubric_bert_cache = None
             prompt_bert_cache = None
@@ -239,7 +154,7 @@ class MetaPurpleBook(Dataset):
         programs = [programs[i] for i in unique_indices]
         traces = [traces[i] for i in unique_indices]
 
-        # this is kind of tricky 
+        # this is to find equivalent "programs" semantically
         equivalences = remap_equivalences(equivalences, index_mapping)
         equivalences = [equivalences[i] for i in range(len(unique_indices))]
 
@@ -287,8 +202,7 @@ class MetaPurpleBook(Dataset):
             traces,
             minifier_maps,
             obfuscate_names=obfuscate_names,
-            roberta_tokenize=roberta_tokenize,
-        )
+            roberta_tokenize=roberta_tokenize)
 
         print('constructing meta info...')
         indices_by_task, labels_by_task = self.prepare_meta(indices, tasks, labels)
@@ -300,9 +214,9 @@ class MetaPurpleBook(Dataset):
 
         assert num_tasks == len(init_task_types)
         task_types = init_task_types + \
-                     [(max(init_task_types) + 1) for _ in range(num_cloze_tasks)] + \
-                     [(max(init_task_types) + 2) for _ in range(num_execution_tasks)] + \
-                     [(max(init_task_types) + 3) for _ in range(num_smlmt_tasks)]
+            [(max(init_task_types) + 1) for _ in range(num_cloze_tasks)] + \
+            [(max(init_task_types) + 2) for _ in range(num_execution_tasks)] + \
+            [(max(init_task_types) + 3) for _ in range(num_smlmt_tasks)]
 
         # default parameters if we aren't using cloze and execution tasks
         self.cloze_task_type = np.inf
@@ -326,8 +240,7 @@ class MetaPurpleBook(Dataset):
                     num_tasks=num_cloze_tasks,
                     n_way=2,
                     n_shots=n_shots,
-                    n_queries=n_queries,
-                )
+                    n_queries=n_queries)
             cloze_masks_by_task = {}
             max_task_id = max(indices_by_task.keys()) + 1
             for t in range(len(cloze_indices_by_task)):
@@ -357,8 +270,7 @@ class MetaPurpleBook(Dataset):
                     num_tasks=num_execution_tasks,
                     n_way=2,
                     n_shots=n_shots,
-                    n_queries=n_queries,
-                )
+                    n_queries=n_queries)
             max_task_id = max(indices_by_task.keys()) + 1
             for t in range(len(exec_indices_by_task)):
                 indices_by_task[max_task_id + t] = exec_indices_by_task[t]
@@ -388,8 +300,7 @@ class MetaPurpleBook(Dataset):
                     num_tasks=num_smlmt_tasks,
                     n_way=2,
                     n_shots=n_shots,
-                    n_queries=n_queries,
-                )
+                    n_queries=n_queries)
             smlmt_masks_by_task = {}
             max_task_id = max(indices_by_task.keys()) + 1
             for t in range(len(smlmt_indices_by_task)):
@@ -435,56 +346,14 @@ class MetaPurpleBook(Dataset):
         self.task_classes = task_classes
         self.max_num_classes = max(self.task_classes.values())
 
-    def load_purplebook_data(self):
-        df = pd.read_csv(self.purplebook_path)
-        key_df = pd.read_csv(self.purplebook_rubric)
-        question_df = pd.read_csv(self.purplebook_prompt)
+    def load_exam_data(self):
+        df = pd.read_csv(self.exam_path)
+        key_df = pd.read_csv(self.exam_rubric)
+        question_df = pd.read_csv(self.exam_prompt)
 
-        # remove last entry bc junk row
-        df = df[1:-1]
-        key_df = key_df[:-1]
-
-        key_rubrics_ = list(key_df['rubric'])
-        key_rubrics_ = [json.loads(r) for r in key_rubrics_] 
-        key_rubrics_ = dict(zip(list(key_df['id']), key_rubrics_))
-
-        # clean up the key rubrics
-        key_rubrics = {}
-        for id_, rubric in key_rubrics_.items():
-            if '-standard' not in id_:
-                continue
-            rubric = list(rubric.values())
-            assert len(rubric) == 1
-            rubric = rubric[0]
-            id_rubrics = {}
-            for row in rubric:
-                row_id = row['id']
-                row_label = row['label']
-                id_rubrics[row_id] = row_label
-            key_rubrics[id_.replace('-standard', '')] = id_rubrics
-
-        # --- add cip20 if selected ---
-
-        # prune to only courses using the same language
-        courses = [
-            'cs106aFinalFall19',
-            'cs106aFinalSpr19',
-            'cs106aFinalWin20',
-            'cs106aMidFall19',
-            'cs106aMidWin20',
-            'cs106apMidtermSpr19',
-            'cs106aDiag1Fall20',
-            'cs106aDiag2Fall20',
-        ]
-
-        if self.add_cip20:
-            cip20_df = pd.read_csv(self.cip20_path)
-            cip20_question_df = pd.read_csv(self.cip20_prompt)
-            df = pd.concat([df, cip20_df])
-            question_df = pd.concat([question_df, cip20_question_df])
-            courses.append('cs106aDiagSpr20')
-        
-        df = df[df['examId'].isin(courses)]
+        key_rubrics = list(key_df['rubric'])
+        key_rubrics = [json.loads(r) for r in key_rubrics] 
+        key_rubrics = dict(zip(list(key_df['id']), key_rubrics))
 
         # merge with questions dataframe
         df = pd.merge(df, question_df, how='left', on=['examId', 'questionId'])
@@ -494,12 +363,12 @@ class MetaPurpleBook(Dataset):
         prompts = np.asarray(df['questionText'])
         scores = np.asarray(df['score'])
 
+        courses = list(np.unique(df['examId']))
+
         # id isn't work bc its unique
-        # tasks = np.asarray(df['id'])
         tasks = string_concat(
             np.asarray(df['examId']),
-            np.asarray(df['questionId']).astype(str),
-        )
+            np.asarray(df['questionId']).astype(str))
         ids = np.asarray(df['id'])
 
         if self.hold_out_category == 'exam':
@@ -522,25 +391,23 @@ class MetaPurpleBook(Dataset):
         indices = ~np.array([isinstance(t, float) for t in tasks])
         programs, rubrics, prompts, scores, tasks, ids, is_test = (
             programs[indices], rubrics[indices], prompts[indices], scores[indices], 
-            tasks[indices], ids[indices], is_test[indices],
-        )
+            tasks[indices], ids[indices], is_test[indices])
         # remove missing rubrics
         indices = ~np.array([isinstance(r, float) for r in rubrics])
         programs, rubrics, prompts, scores, tasks, ids, is_test = (
             programs[indices], rubrics[indices], prompts[indices], scores[indices], 
-            tasks[indices], ids[indices], is_test[indices],
-        )
+            tasks[indices], ids[indices], is_test[indices])
 
         # compile programs and remove those with bad compilations
-        traces = []
-        indices = []
-        print('purplebook: compiling programs...')
+        traces, indices = [], []
+        print('compiling programs...')
         for i in tqdm(range(len(programs))):
             trace_i = compile_program(programs[i])
             if trace_i is not None:
                 traces.append(trace_i)
                 indices.append(i)
         traces = np.array(traces)
+
         # subset the other objects with indices
         indices = np.array(indices)
         programs, rubrics, prompts, scores, tasks, ids, is_test = (
@@ -548,7 +415,7 @@ class MetaPurpleBook(Dataset):
             tasks[indices], ids[indices], is_test[indices], 
         )
 
-        print('purplebook: parsing rubrics...')
+        print('parsing rubrics...')
         # replace rubrics with string format with key_rubrics
         new_rubrics = []
         for task, rubric, task_id in zip(tasks, rubrics, ids):
@@ -558,25 +425,24 @@ class MetaPurpleBook(Dataset):
                 new_rubric = {}
                 rubric_map = key_rubrics[task]
                 for key in rubric:
-                    if key not in ["generalDeduction", "comments"]:
-                        if key in rubric_map:
-                            new_key = {
-                                'name': task, 
-                                'id': task_id, 
-                                'human_label': rubric_map[key], 
-                                'abbrev_label': key,
-                            }
-                            new_key = json.dumps(new_key)
-                            new_rubric[new_key] = rubric[key]
-                        else:
-                            new_key = {
-                                'name': task, 
-                                'id': task_id, 
-                                'human_label': key, 
-                                'abbrev_label': key,
-                            }
-                            new_key = json.dumps(new_key)
-                            new_rubric[new_key] = rubric[key]
+                    if key in rubric_map:
+                        new_key = {
+                            'name': task, 
+                            'id': task_id, 
+                            'human_label': rubric_map[key], 
+                            'abbrev_label': key,
+                        }
+                        new_key = json.dumps(new_key)
+                        new_rubric[new_key] = rubric[key]
+                    else:
+                        new_key = {
+                            'name': task, 
+                            'id': task_id, 
+                            'human_label': key, 
+                            'abbrev_label': key,
+                        }
+                        new_key = json.dumps(new_key)
+                        new_rubric[new_key] = rubric[key]
                 new_rubrics.append(new_rubric)
             else:
                 new_rubric = {}
@@ -593,13 +459,13 @@ class MetaPurpleBook(Dataset):
 
         # replace rubric with new_rubric
         rubrics = np.asarray(new_rubrics) 
+
         # remove tasks where everyone got the same score
         # remove tasks with less than 50 responses. These tasks
         # are probably not useful for learning
-        # 
+
         # if not conservative, don't remove anything and 
         # keep trivial tasks with one label.
-
         if self.conservative:
             bad_tasks = []
             for ta in np.unique(tasks):
@@ -610,8 +476,9 @@ class MetaPurpleBook(Dataset):
             bad_tasks = np.array(bad_tasks)
             indices = ~np.in1d(tasks, bad_tasks)
             programs, traces, rubrics, prompts, scores, tasks, is_test, = (
-                programs[indices], traces[indices], rubrics[indices], prompts[indices], 
-                scores[indices], tasks[indices], is_test[indices], 
+                programs[indices], traces[indices], rubrics[indices], 
+                prompts[indices], scores[indices], tasks[indices], 
+                is_test[indices], 
             )
 
         # build equivalence maps from index to a set of indices
@@ -630,184 +497,39 @@ class MetaPurpleBook(Dataset):
         #     is that we only have to compile programs once.
         indices = np.arange(len(programs))
 
-        print('purplebook: building tasks...')
+        print('building tasks...')
         # a task is now defined by several labels, we can duplicate each to new tasks
-        indices, labels, tasks, questions, task_splits, task_classes, task_stats, rubric_maps, prompt_maps = \
-            construct_tasks_by_rubric(indices, rubrics, prompts, tasks, is_test)
-        # some n-way classes are improverished : try to collapse small classes together
-        # labels, task_classes, task_stats = \
-        #     merge_small_classes(labels, tasks, task_classes, task_stats)
+        indices, labels, tasks, questions, task_splits, \
+        task_classes, task_stats, rubric_maps, prompt_maps = \
+            construct_tasks_by_rubric(
+                indices, rubrics, prompts, tasks, is_test)
 
         if self.conservative:
-            print('purplebook: removing trivial classes...')
-            indices, labels, tasks, questions, task_splits, task_classes, task_stats, rubric_maps, prompt_maps = \
-                remove_small_classes(indices, labels, tasks, questions, task_splits, task_classes, 
-                                    task_stats, rubric_maps, prompt_maps, min_freq=self.n_shots + self.n_queries)
+            print('removing trivial classes...')
+            indices, labels, tasks, questions, task_splits, \
+            task_classes, task_stats, rubric_maps, prompt_maps = \
+                remove_small_classes(
+                    indices, labels, tasks, questions, task_splits, task_classes, 
+                    task_stats, rubric_maps, prompt_maps, 
+                    min_freq=self.n_shots + self.n_queries)
 
         if self.enforce_binary:
-            print('purplebook: collapsing tasks to binary...')
+            print('collapsing tasks to binary...')
             if self.conservative:
                 indices, labels, tasks, questions, task_splits, \
                 task_classes, task_stats, rubric_maps, prompt_maps = \
                     make_binary_tasks(
                         indices, labels, tasks, questions, task_splits, task_classes, 
-                        task_stats, rubric_maps, prompt_maps,
-                    )
+                        task_stats, rubric_maps, prompt_maps)
             else:
                 indices, labels, tasks, questions, task_splits, \
                 task_classes, task_stats, rubric_maps, prompt_maps = \
                     make_binary_tasks_liberally(
                         indices, labels, tasks, questions, task_splits, task_classes,
-                        task_stats, rubric_maps, prompt_maps,
-                    )
-       
+                        task_stats, rubric_maps, prompt_maps)
+
         return programs, traces, indices, labels, tasks, questions, task_splits, \
                task_classes, task_stats, rubric_maps, prompt_maps, equivalence_maps
-
-    def load_cs106a_data(self):
-        folders_1920 = glob(os.path.join(self.cs106a_path, 'ay1920', '*/*'))
-        folders_1819 = glob(os.path.join(self.cs106a_path, 'ay1819', '*/*'))
-        folders_2020 = glob(os.path.join(self.cs106a_path, 'aut20', '*/*'))
-        folders = folders_1920 + folders_1819 + folders_2020
-        code_folders = [fol for fol in folders if '_code' in fol]
-        grade_folders = [fol.replace('_code', '_grades') for fol in code_folders]
-
-        question_df = pd.read_csv(self.cs106a_prompt)
-
-        programs, traces, indices, labels, tasks, questions = [], [], [], [], [], []
-        task_to_split_mapping = {}
-        task_to_class_mapping = {}
-        task_to_stats_mapping = []
-        rubric_maps = {}
-        prompt_maps = {}
-        task_ix = 0
-        question_ix = 0
-
-        is_test = np.zeros(len(grade_folders))
-        split_ix = self.rs.choice(
-            np.arange(len(grade_folders)),
-            size=int(math.ceil((1 - self.train_frac) * len(grade_folders))),
-            replace=False,
-        )
-        is_test[split_ix] = 1
-
-        # store all the mappings for equivalent programs here
-        equivalence_maps = {}
-
-        pbar = tqdm(total=len(code_folders))
-        for code_folder, grade_folder in zip(code_folders, grade_folders):
-            assign_name = '/'.join(code_folder.split('/')[-3:])
-            rubric_path = os.path.join(grade_folder, 'Functionality.csv')
-            rubric_df = pd.read_csv(rubric_path)
-            rubric_names = list(rubric_df.keys())[3:]
-            rubric_df = np.asarray(rubric_df)
-            sunet_ids = list(rubric_df[:, 2])
-            rubrics = rubric_df[:, 3:]
-            num_rubrics = rubrics.shape[1]
-
-            assign_prompt, question_prompt, _ = assign_name.split('/')
-            prompt = question_df[
-                (question_df['assignmentId'] == assign_prompt) & \
-                (question_df['questionId'] == question_prompt)
-            ]['questionText']
-            assert len(prompt) == 1, breakpoint()
-            prompt = prompt.iloc[0]
-
-            # load all the programs
-            valid_sunet_ids = os.listdir(code_folder)	
-            sunet_ids = list(set(sunet_ids).intersection(set(valid_sunet_ids)))
-            
-            # load all the programs
-            cur_programs = []
-            cur_traces = [] 
-            cur_slices = []
-            for ix, sunet_id in enumerate(sunet_ids):
-                student_folder = os.path.join(code_folder, sunet_id)
-                python_paths = glob(os.path.join(student_folder, '*.py'))
-                if len(python_paths) == 0:
-                    continue
-                python_path = python_paths[0]
-                with open(python_path, 'r') as f:
-                    program = str(f.readlines())
-                program = eval(program)
-                program = ''.join(program)
-
-                # try to compile the program and make sure it works
-                trace = compile_program(program)
-                if trace is not None:
-                    cur_programs.append(program)
-                    cur_traces.append(trace)
-                    cur_slices.append(ix)
-
-            if len(cur_programs) <= 1:
-                pbar.update()
-                continue
-
-            cur_slices = np.array(cur_slices)
-            rubrics = rubrics[cur_slices]
-            cur_indices = np.arange(len(cur_programs)) + len(programs)
-           
-            # build equivalences
-            rubrics_floats = make_rubrics_float(rubrics)
-            task_equivalences = build_equivalences(cur_indices, rubrics_floats)
-            equivalence_maps.update(task_equivalences)
-
-            cur_indices = cur_indices.tolist()
-
-            # only add programs once 
-            programs.extend(cur_programs)
-            traces.extend(cur_traces)
-
-            for i in range(num_rubrics):
-                rubric_name = rubric_names[i]
-                cur_rubrics = rubrics[:, i]
-                rubric_set = list(set(cur_rubrics))
-                cur_rubrics = [rubric_set.index(r) for r in cur_rubrics]
-                cur_tasks = [task_ix for _ in range(len(cur_programs))]
-                cur_questions = [question_ix for _ in range(len(cur_programs))]
-
-                max_label = max(cur_rubrics)
-                if max_label > 5:
-                    continue  # ignore ones with really large # of classes. 
-                if max_label == 0:
-                    continue  # ignore ones with only one class
-
-                if self.enforce_binary:
-                    # again we treat the most ommon as the first label and 
-                    # the sum of all others as the second.
-                    label_freqs = Counter(cur_rubrics).most_common()
-                    most_common_label = label_freqs[0][0]
-                    cur_rubrics = np.array(cur_rubrics)
-                    new_rubrics = np.ones_like(cur_rubrics)
-                    new_rubrics[cur_rubrics == most_common_label] = 0
-                    cur_rubrics = list(new_rubrics)
-
-                # add current stuff to collection
-                indices.extend(cur_indices)
-                labels.extend(cur_rubrics)
-                tasks.extend(cur_tasks)
-                questions.extend(cur_questions)
-
-                max_label = max(cur_rubrics)
-                rubric_map = json.dumps({'name': assign_name,
-                                         'human_label': rubric_name})
-                rubric_maps[task_ix] = rubric_map
-                
-                task_to_split_mapping[task_ix] = is_test[question_ix]
-                task_to_class_mapping[task_ix] = int(max_label + 1) if max_label > 1 else 2
-                task_to_stats_mapping.append(dict(Counter(cur_rubrics)))
-                prompt_maps[task_ix] = prompt
-
-                task_ix += 1
-
-            question_ix += 1
-
-            pbar.update()
-        pbar.close()
-
-        return programs, traces, indices, labels, tasks, questions, task_to_split_mapping, \
-               task_to_class_mapping, task_to_stats_mapping, rubric_maps, prompt_maps, \
-               equivalence_maps
 
     def create_vocab(
             self, 
@@ -917,8 +639,8 @@ class MetaPurpleBook(Dataset):
                     padding='max_length', 
                     max_length=self.max_seq_len,
                     return_length=True,
-                    pad_to_max_length=True, 
-                )
+                    pad_to_max_length=True)
+
                 tokens = tokenizer_outputs['input_ids']
                 token_length = tokenizer_outputs['length']
             else:
@@ -926,8 +648,8 @@ class MetaPurpleBook(Dataset):
                     program,
                     trace,
                     minifier_map=minifier_map,
-                    obfuscate_names=obfuscate_names,
-                )
+                    obfuscate_names=obfuscate_names)
+
                 tokens = [SOS_TOKEN] + tokens[:self.max_seq_len - 2] + [EOS_TOKEN]
                 token_length = len(tokens)
 
@@ -962,7 +684,12 @@ class MetaPurpleBook(Dataset):
             prompts_list,
             equivalences_list,
         ):
-        programs, traces, indices, labels, tasks, questions = [], [], [], [], [], []
+        programs = []
+        traces = []
+        indices = []
+        labels = []
+        tasks = []
+        questions = []
         task_splits = {}
         task_classes = {}
         task_stats = []
@@ -1687,17 +1414,17 @@ class MetaPurpleBook(Dataset):
         return output_dict
 
 
-class SupervisedPurpleBook(MetaPurpleBook):
+class SupervisedExamSolutions(MetaExamSolutions):
 
     def __init__(
             self,
             task_index,
             n_shots,
             n_queries,
-            data_root=CCN_DATA_ROOT,
-            purplebook_path=PURPLEBOOK_ROOT,
-            purplebook_rubric=PURPLEBOOK_RUBRIC,
-            cache_path=CACHE_ROOT,           # where to cache RoBerta embeddings of rubric names if roberta_rubric = True
+            data_root=None,                  # root of the dataset
+            exam_path=None,
+            exam_rubric=None,
+            cache_path=None,                 # where to cache RoBerta embeddings of rubric names if roberta_rubric = True
             roberta_rubric=True,             # if True, map rubric text to RoBERTa encoding
             roberta_prompt=True,
             roberta_config='microsoft/codebert-base',  # which pretrained RoBERTa to use for tokenizing
@@ -1715,12 +1442,10 @@ class SupervisedPurpleBook(MetaPurpleBook):
             n_shots,
             n_queries,
             data_root=data_root,
-            purplebook_path=purplebook_path,
-            purplebook_rubric=purplebook_rubric,
-            cs106a_path=CS106A_ROOT,
+            exam_path=exam_path,
+            exam_rubric=exam_rubric,
             cache_path=cache_path,
             vocab=None,
-            add_cs106_assignments=False,
             obfuscate_names=False,
             augment_by_names=False,
             augment_by_rubric=False,
@@ -1748,7 +1473,7 @@ class SupervisedPurpleBook(MetaPurpleBook):
 
     def prep_data(self, train=False):
         """
-        NOTE: modeled after MetaPurplebook(...).__getitem__()
+        NOTE: modeled after MetaExamSolutions(...).__getitem__()
         """
         task = int(self.task_ids[self.task_index])
 
@@ -1833,543 +1558,6 @@ class SupervisedPurpleBook(MetaPurpleBook):
         return len(self.data['tokens'])
 
 
-class SupervisedPurpleBook_MetaTrain(MetaPurpleBook):
-
-    def __init__(
-            self,
-            n_shots,
-            n_queries,
-            data_root=CCN_DATA_ROOT,
-            purplebook_path=PURPLEBOOK_ROOT,
-            purplebook_rubric=PURPLEBOOK_RUBRIC,
-            cache_path=CACHE_ROOT,           # where to cache RoBerta embeddings of rubric names if roberta_rubric = True
-            roberta_rubric=True,             # if True, map rubric text to RoBERTa encoding
-            roberta_prompt=True,
-            roberta_config='microsoft/codebert-base',  # which pretrained RoBERTa to use for tokenizing
-            max_seq_len=1000,
-            min_occ=1,
-            # train=True,                    # this is only used for training!
-            hold_out_split=True,             # if True, use unseen exam as test set; otherwise use unseen (exam, rubric) tuples
-            hold_out_category='exam',
-            enforce_binary=False,            # if True, all tasks are binary prediction problems
-            fix_seed=True,
-            pad_to_max_num_class=False,      # if True, all tasks are padded to the maximum # of classes
-            aux_dataset=None,                # if we want to pass additional data
-        ):
-        super().__init__(
-            n_shots,
-            n_queries,
-            data_root=data_root,
-            purplebook_path=purplebook_path,
-            purplebook_rubric=purplebook_rubric,
-            cs106a_path=CS106A_ROOT,
-            cache_path=cache_path,
-            vocab=None,
-            add_cs106_assignments=False,
-            obfuscate_names=False,
-            augment_by_names=False,
-            augment_by_rubric=False,
-            roberta_rubric=roberta_rubric,
-            roberta_prompt=roberta_prompt,
-            roberta_tokenize=True,
-            roberta_config=roberta_config,
-            cloze_tasks_factor=0,
-            execution_tasks_factor=0,
-            smlmt_tasks_factor=0,
-            max_num_var=100,
-            max_num_func=10,
-            max_seq_len=max_seq_len,
-            min_occ=min_occ,
-            train=True,  # always true! 
-            train_frac=0.9,
-            hold_out_split=hold_out_split,
-            hold_out_category=hold_out_category,
-            enforce_binary=enforce_binary,
-            fix_seed=fix_seed,
-            pad_to_max_num_class=pad_to_max_num_class,
-        )
-        self.aux_data = aux_dataset.data
-        self.data = self.prep_data()
-        keys = list(self.data.keys())
-
-        for k in keys:
-            num = len(self.aux_data['tokens'])
-            if k == 'prompts':
-                self.data[k] = self.data[k] + [self.aux_data['prompt_bert_name'] for _ in range(num)]
-            elif k == 'rubrics':
-                self.data[k] = self.data[k] + [self.aux_data['rubric_bert_name'] for _ in range(num)]
-            else:
-                self.data[k] = self.data[k] + list(self.aux_data[k])
-
-    def prep_data(self):
-        """
-        Just like SupervisedPurplebook except we use all meta-training support
-        and query examples in addition to the meta-test support examples to 
-        train/finetune the encoder.
-        """
-        all_toks, all_lens, all_labs, all_masks = [], [], [], []
-        all_rubrics, all_prompts = [], []
-
-        for task_index in range(len(self.task_ids)):
-            task = int(self.task_ids[task_index])
-
-            rubric_name = self.rubrics[task_index] 
-            if isinstance(rubric_name, list):
-                rubric_name = list(set([json.loads(x)['human_label'] for x in rubric_name]))[0]
-            elif isinstance(rubric_name, str):
-                rubric_name = json.loads(rubric_name)['human_label']
-            else:
-                raise Exception('type not supported.')
-            prompt_name = self.prompts[task_index]
-
-            if self.roberta_rubric:
-                rubric_bert_name = self.rubric_bert_cache[rubric_name]
-            else:
-                rubric_bert_name = torch.zeros(768)
-
-            if self.roberta_prompt:
-                prompt_hash = hashlib.sha256(prompt_name.encode('utf-8')).hexdigest()
-                prompt_bert_name = self.prompt_bert_cache[prompt_hash]
-            else:
-                prompt_bert_name = torch.zeros(768)
-
-            indices = self.indices_by_task[task]
-            toks = [self.token_seqs[i] for i in indices]
-            lens = [self.token_lens[i] for i in indices]
-            labs = np.array(self.labels_by_task[task])
-
-            num_classes = self.task_classes[task]
-            train_indices = []
-
-            for cls in range(num_classes):
-                valid_indices = np.where(labs == cls)[0]
-                train_ids = self.rs.choice(valid_indices, self.n_shots + self.n_queries, False)
-                train_ids = sorted(train_ids.tolist())
-                train_indices.extend(train_ids)
-
-            num_examples = len(train_indices)
-            task_toks = [toks[i] for i in train_indices]
-            task_lens = [lens[i] for i in train_indices]
-            task_labs = [labs[i] for i in train_indices]
-            task_masks = self.build_attention_masks(task_lens)
-            task_masks = [task_masks[i] for i in range(num_examples)]  # make list
-
-            all_toks += task_toks
-            all_lens += task_lens
-            all_labs += task_labs
-            all_masks += task_masks
-            all_rubrics += [rubric_bert_name for _ in range(num_examples)]
-            all_prompts += [prompt_bert_name for _ in range(num_examples)]
-
-        data_dict = dict(
-            tokens=all_toks,
-            lengths=all_lens,
-            labels=all_labs,
-            masks=all_masks,
-            rubrics=all_rubrics,
-            prompts=all_prompts,
-        )
-        return data_dict
-
-    def __getitem__(self, index):
-        output_dict = dict(
-            tokens=torch.LongTensor(self.data['tokens'][index]),
-            lengths=self.data['lengths'][index],
-            labels=self.data['labels'][index],
-            masks=self.data['masks'][index].long(),
-            rubric_embs=self.data['rubrics'][index].float(),
-            prompt_embs=self.data['prompts'][index].float(),
-        )
-        return output_dict
-
-    def __len__(self):
-        return len(self.data['tokens'])
-
-
-class EmbedPurpleBook(Dataset):
-    """
-    Dataset for computing embeddings given a trained ProtoTransformer.
-    Organizes tasks by student / question, not by class.
-
-    NOTE: this only supports RoBERTa tokenizing at the moment.
-    NOTE: we also assume rubric / prompts are used
-    """
-    def __init__(
-            self,
-            data_root=CCN_DATA_ROOT,
-            purplebook_path=PURPLEBOOK_ROOT,
-            purplebook_rubric=PURPLEBOOK_RUBRIC,
-            purplebook_prompt=PURPLEBOOK_PROMPT,
-            cache_path=EMBED_CACHE_ROOT,
-            roberta_device='cpu',
-            roberta_config='microsoft/codebert-base',
-        ):
-        super(EmbedPurpleBook, self).__init__()
-
-        cache_path = os.path.join(data_root, cache_path)
-
-        if not os.path.isdir(cache_path):
-            os.makedirs(cache_path)
-
-        self.purplebook_path = os.path.join(data_root, purplebook_path)
-        self.purplebook_rubric = os.path.join(data_root, purplebook_rubric)
-        self.purplebook_prompt = os.path.join(data_root, purplebook_prompt)
-        self.roberta_device = roberta_device
-
-        purplebook_data = self.load_purplebook_data()
-        self.rubric_bert_cache = self.roberta_embed_rubrics(purplebook_data['rubrics'], cache_path)
-        self.prompt_bert_cache = self.roberta_embed_prompts(purplebook_data['prompts'], cache_path)
-
-        self.tokenizer = RobertaTokenizer.from_pretrained(roberta_config)
-        self.vocab_size = self.tokenizer.vocab_size
-        self.pad_index = self.tokenizer.pad_token_id
-
-        print('processing entries with tokenizer...')
-        self.token_seqs, self.token_masks = self.process_programs(
-            purplebook_data['programs'],
-            purplebook_data['traces'],
-        )
-        self.purplebook_data = purplebook_data
-
-        def make_discrete(values):
-            vocab = list(set(values))
-            vocab = dict(zip(vocab, range(len(vocab))))
-            discrete_values = [vocab[value] for value in values]
-            discrete_values = np.array(discrete_values)
-            return discrete_values, vocab
-
-        self.users_, self.user_vocab = make_discrete(purplebook_data['users'])
-        self.exams_, self.exam_vocab = make_discrete(purplebook_data['exams'])
-        self.questions_, self.question_vocab = make_discrete(purplebook_data['questions'])
-
-    def load_purplebook_data(self):
-        df = pd.read_csv(self.purplebook_path)
-        key_df = pd.read_csv(self.purplebook_rubric)
-        question_df = pd.read_csv(self.purplebook_prompt)
-
-        # remove last entry bc junk row
-        df = df[1:-1]
-        key_df = key_df[:-1]
-
-        key_rubrics_ = list(key_df['rubric'])
-        key_rubrics_ = [json.loads(r) for r in key_rubrics_] 
-        key_rubrics_ = dict(zip(list(key_df['id']), key_rubrics_))
-
-        # clean up the key rubrics
-        key_rubrics = {}
-        for id_, rubric in key_rubrics_.items():
-            if '-standard' not in id_:
-                continue
-            rubric = list(rubric.values())
-            assert len(rubric) == 1
-            rubric = rubric[0]
-            id_rubrics = {}
-            for row in rubric:
-                row_id = row['id']
-                row_label = row['label']
-                id_rubrics[row_id] = row_label
-            key_rubrics[id_.replace('-standard', '')] = id_rubrics
-
-        # prune to only courses using the same language
-        courses = [
-            'cs106aFinalFall19',
-            'cs106aFinalSpr19',
-            'cs106aFinalWin20',
-            'cs106aMidFall19',
-            'cs106aMidWin20',
-            'cs106apMidtermSpr19',
-            'cs106aDiag1Fall20',
-            'cs106aDiag2Fall20',
-        ]
-
-        df = df[df['examId'].isin(courses)]
-        df = pd.merge(df, question_df, how='left', on=['examId', 'questionId'])
-        raw_ix = np.asarray(df.index)
-
-        programs = np.asarray(df['answer'])
-        rubrics = np.asarray(df['gradeData'])
-        prompts = np.asarray(df['questionText'])
-        scores = np.asarray(df['score'])
-        users = np.asarray(df['sunetId']).astype(str)
-        exams = np.asarray(df['examId']).astype(str)
-        questions = np.asarray(df['questionId']).astype(str)
-        exam_questions = string_concat(
-            np.asarray(df['examId']).astype(str),
-            np.asarray(df['questionId']).astype(str),
-        )
-
-        # remove rows with missing data
-        has_user_indices = ~np.array([isinstance(t, float) for t in users])
-        has_exam_indices = ~np.array([isinstance(t, float) for t in exams])
-        has_question_indices = ~np.array([isinstance(t, float) for t in questions])
-        has_rubric_indices = ~np.array([isinstance(t, float) for t in rubrics])
-        indices = has_user_indices * has_exam_indices * has_question_indices * has_rubric_indices
-        programs, rubrics, prompts, scores, users, exams, questions, exam_questions = (
-            programs[indices], rubrics[indices], prompts[indices], scores[indices], 
-            users[indices], exams[indices], questions[indices], exam_questions[indices],
-        )
-        raw_ix = raw_ix[indices]
-
-        # compile programs and remove those with bad compilations
-        traces = []
-        indices = []
-        print('purplebook: compiling programs...')
-        for i in tqdm(range(len(programs))):
-            trace_i = compile_program(programs[i])
-            if trace_i is not None:
-                traces.append(trace_i)
-                indices.append(i)
-        traces = np.array(traces)
-        # subset the other objects with indices
-        indices = np.array(indices)
-        programs, rubrics, prompts, scores, users, exams, questions, exam_questions = (
-            programs[indices], rubrics[indices], prompts[indices], scores[indices], 
-            users[indices], exams[indices], questions[indices], exam_questions[indices]
-        )
-        raw_ix = raw_ix[indices]
-
-        print('purplebook: parsing rubrics...')
-        # replace rubrics with string format with key_rubrics
-        new_rubrics = []
-        indices = []
-        for i, (exam_question, rubric) in enumerate(zip(exam_questions, rubrics)):
-            rubric = json.loads(rubric)
-
-            if exam_question in key_rubrics:
-                new_rubric = {}
-                rubric_map = key_rubrics[exam_question]
-
-                for ind, key in enumerate(rubric.keys()):
-                    if key not in ["generalDeduction", "comments"]:
-                        if key in rubric_map:
-                            new_rubric[rubric_map[key]] = rubric[key]
-                        else:
-                            new_rubric[key] = rubric[key]
-                new_rubrics.append(new_rubric)
-                indices.append(i)
-
-        rubrics = np.asarray(new_rubrics) 
-        indices = np.array(indices)
-
-        # throw out examples that don't have rubric labels
-        programs, traces, prompts, scores, users, exams, questions, exam_questions = (
-            programs[indices], traces[indices], prompts[indices], scores[indices], 
-            users[indices], exams[indices], questions[indices], exam_questions[indices]
-        )
-        raw_ix = raw_ix[indices]
-
-        # remove exam_questions where everyone got the same score
-        # remove exam_questions with less than 50 responses. These exam_questions
-        # are probably not useful for learning
-        bad_exam_questions = []
-        for e in np.unique(exam_questions):
-            if len(np.unique(scores[exam_questions == e])) == 1:
-                bad_exam_questions.append(e)
-            elif len(scores[exam_questions == e]) < 50:
-                bad_exam_questions.append(e)
-        bad_exam_questions = np.array(bad_exam_questions)
-        indices = ~np.in1d(exam_questions, bad_exam_questions)
-        programs, traces, rubrics, prompts, scores, users, exams, questions, exam_questions = (
-            programs[indices], traces[indices], rubrics[indices], prompts[indices], scores[indices], 
-            users[indices], exams[indices], questions[indices], exam_questions[indices]
-        )
-        raw_ix = raw_ix[indices]
-
-        # now i have to duplicate everything so every program has its own rubric!
-        indices = []
-        labels = []
-        rubric_names = []
-        rubric_inds = []
-        for i, rubric in enumerate(rubrics):
-            for ind, (key, label) in enumerate(rubric.items()):
-                indices.append(i)
-                labels.append(label)
-                rubric_names.append(key)
-                rubric_inds.append(ind)
-
-        indices = np.array(indices)
-        labels = np.array(labels)
-        rubrics = np.array(rubric_names)
-        rubric_inds = np.array(rubric_inds)
-        programs = programs[indices]
-        traces = traces[indices]
-        prompts = prompts[indices]
-        scores = scores[indices]
-        users = users[indices]
-        exams = exams[indices]
-        questions = questions[indices]
-        raw_ix = raw_ix[indices]
-
-        results = dict( 
-            raw_ind=raw_ix,
-            programs=programs, 
-            traces=traces, 
-            rubrics=rubrics, 
-            rubric_inds=rubric_inds,
-            labels=labels,
-            prompts=prompts, 
-            scores=scores, 
-            users=users, 
-            exams=exams, 
-            questions=questions,
-        )
-        return results
-
-    def roberta_embed_rubrics(self, rubric_list, cache_path, key='human_label'):
-        """
-        rubric_list maps a task to a rubric name and list of value names
-        """
-        print('Computing rubric BERT embeddings...')
-
-        edited_cache = False
-        cache_file = os.path.join(cache_path, 'sentence_bert_rubric_cache.pth.tar')
-
-        if os.path.exists(cache_file):
-            roberta_cache = torch.load(cache_file)
-        else:
-            roberta_cache = {}
-
-        if 'None' not in roberta_cache:
-            roberta_cache['None'] = torch.zeros(768)
-
-        rubrics_set = list(set(rubric_list))
-        rubrics_to_run = []  # these are the things we need to run
-
-        for rubric in rubrics_set: 
-            if rubric in roberta_cache:
-                embs = roberta_cache[rubric]
-            elif rubric == 'None':  # replace this with just zeros
-                embs = torch.zeros(768)
-                roberta_cache[rubric] = embs
-                edited_cache = True
-            else:
-                rubrics_to_run.append(rubric)
-                edited_cache = True
-
-        if len(rubrics_to_run) > 0:
-            assert edited_cache
-            bert = SentenceBERT(
-                version='bert-base-nli-stsb-mean-tokens',
-                device=self.roberta_device,
-            )
-            embs = bert(rubrics_to_run, batch_size=32, show_progress_bar=True)
-            embs = embs.detach().cpu()
-
-            for i in range(len(rubrics_to_run)):
-                roberta_cache[rubrics_to_run[i]] = embs[i]
-
-        if edited_cache:
-            print('Made edits to cache... saving...')
-            torch.save(roberta_cache, cache_file)
-
-        return roberta_cache
-
-    def roberta_embed_prompts(self, prompt_list, cache_path):
-        print('Computing prompt BERT embeddings...')
-
-        edited_cache = False
-        cache_file = os.path.join(cache_path, f'sentence_bert_prompt_cache.pth.tar')
-
-        if os.path.exists(cache_file):
-            roberta_cache = torch.load(cache_file)
-        else:
-            roberta_cache = {}
-
-        if 'None' not in roberta_cache:
-            roberta_cache['None'] = torch.zeros(768)
-
-        prompt_set = list(set(prompt_list))
-        texts_to_run = []  # these are the things we need to run
-        hashs_to_run = []
-
-        for prompt in prompt_set: 
-            prompt = str(prompt)
-            prompt_hash = hashlib.sha256(prompt.encode('utf-8')).hexdigest()
-            if prompt_hash in roberta_cache:
-                embs = roberta_cache[prompt_hash]
-            elif prompt == 'None':
-                embs = torch.zeros(768)
-                roberta_cache[prompt_hash] = embs
-                edited_cache = True
-            else:
-                texts_to_run.append(prompt)
-                hashs_to_run.append(prompt_hash)
-                edited_cache = True
-
-        if len(texts_to_run) > 0:
-            assert edited_cache
-            assert len(texts_to_run) == len(hashs_to_run)
-            bert = SentenceBERT(
-                version='bert-base-nli-stsb-mean-tokens',
-                device=self.roberta_device,
-            )
-            embs = bert(texts_to_run, batch_size=32, show_progress_bar=True)
-            embs = embs.detach().cpu()
-
-            for i in range(len(texts_to_run)):
-                roberta_cache[hashs_to_run[i]] = embs[i]
-
-        if edited_cache:
-            print('Made edits to cache... saving...')
-            torch.save(roberta_cache, cache_file)
-
-        return roberta_cache
-
-    def process_programs(self, programs, traces):
-        token_seqs, token_masks = [], []
-
-        for i in tqdm(range(len(programs))):
-            program, trace = programs[i], traces[i]
-            program = clean_program(program)
-            tokenizer_outputs = self.tokenizer(
-                program,
-                truncation=True, 
-                padding='max_length', 
-                max_length=512,
-                return_length=True,
-                pad_to_max_length=True, 
-            )
-            tokens = tokenizer_outputs['input_ids']
-            token_mask = tokenizer_outputs['attention_mask']
-            token_seqs.append(tokens)
-            token_masks.append(token_mask)
-
-        return token_seqs, token_masks
-
-    def __getitem__(self, index):
-        rubric_name = self.purplebook_data['rubrics'][index]
-        prompt_text = self.purplebook_data['prompts'][index]
-        rubric_ind = self.purplebook_data['rubric_inds'][index]
-
-        rubric_bert = self.rubric_bert_cache[rubric_name]
-        prompt_hash = hashlib.sha256(prompt_text.encode('utf-8')).hexdigest()
-        prompt_bert = self.prompt_bert_cache[prompt_hash]
-
-        token_seq = self.token_seqs[index]
-        token_mask = self.token_masks[index]
-
-        score = self.purplebook_data['scores'][index]
-        user = self.users_[index]
-        exam = self.exams_[index]
-        question = self.questions_[index]
-
-        output_dict = dict(
-            tokens=torch.LongTensor(token_seq),
-            mask=torch.LongTensor(token_mask),
-            score=score,
-            user=user,
-            exam=exam,
-            question=question,
-            rubric=rubric_ind,
-            rubric_embs=rubric_bert,
-            prompt_embs=prompt_bert,
-        )
-        return output_dict
-
-    def __len__(self):
-        return len(self.purplebook_data['programs'])
-
-
 def build_many_equivalences(tasks, rubrics):
     utasks = list(set(tasks))
 
@@ -2444,7 +1632,7 @@ def clean_program(program):
     return program
 
 
-def clean_purplebook_rubrics(rubrics, key='human_label'):
+def clean_exam_rubrics(rubrics, key='human_label'):
     new_rubrics = []
     rubric_map = defaultdict(lambda: [])
     for rubric in rubrics:
@@ -2462,7 +1650,7 @@ def clean_purplebook_rubrics(rubrics, key='human_label'):
     return new_rubrics, rubric_map
 
 
-def get_purplebook_rubric_keys(rubrics):
+def get_exam_rubric_keys(rubrics):
     all_keys = set()
     for rubric in rubrics:
         keys = list(rubric.keys())
@@ -2482,8 +1670,8 @@ def construct_tasks_by_rubric(indices, rubrics, prompts, tasks, is_test):
     for ta in np.unique(tasks):
         task_indices = indices[tasks == ta]
         raw_task_rubrics = rubrics[tasks == ta]
-        task_rubrics, task_rmap = clean_purplebook_rubrics(raw_task_rubrics)
-        rubric_keys = get_purplebook_rubric_keys(task_rubrics)
+        task_rubrics, task_rmap = clean_exam_rubrics(raw_task_rubrics)
+        rubric_keys = get_exam_rubric_keys(task_rubrics)
         
         task_prompts = prompts[tasks == ta]
         assert len(set(task_prompts)) == 1
@@ -2739,7 +1927,6 @@ def merge_small_classes(labels, tasks, task_classes, task_stats, rubric_maps):
     new_labels = copy.deepcopy(labels)
     new_task_classes = copy.deepcopy(task_classes)
     new_task_stats = copy.deepcopy(task_stats)
-    new_rubric_maps = copy.deepcopy(rubric_maps)
 
     for ta in np.unique(tasks):
         if task_classes[ta] == 2:
@@ -2882,8 +2069,3 @@ def remap_equivalences(equivalences, index_mapping):
                 new_eq.append(index_mapping[ix])
         new_equivalences[new_index] = new_eq
     return new_equivalences
-
-
-if __name__ == "__main__":
-    dset = EmbedPurpleBook()
-    print(dset.__getitem__(0))

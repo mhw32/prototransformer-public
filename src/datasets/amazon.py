@@ -484,10 +484,3 @@ def _combine_data(support_data, data):
             data[key][value]['support_target'] = \
                 copy.deepcopy(support_data[support_key][value]['target'])
     return data
-
-
-
-if __name__ == "__main__":
-    dset = EvalFewShotAmazonSentiment('/data5/wumike/metacode/nlp/few_shot_amazon', 0)
-    item = dset.__getitem__(0)
-    print(item)

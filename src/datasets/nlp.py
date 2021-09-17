@@ -417,7 +417,3 @@ class SupNewsGroup(BaseSupNLPDataset):
         self.raw_names = cur_target_names
         self.cache_dir = os.path.join(self.data_root, 'newsgroup', 'cache')
         self.num_cats = len(cur_target_names)
-
-
-if __name__ == "__main__":
-    MetaNewsGroup('./', 5, 1, 10)

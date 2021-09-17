@@ -27,8 +27,7 @@ from src.models.task import TaskEmbedding
 from src.models.signatures import DistSign
 from src.agents.base import BaseAgent
 from src.objectives.prototype import batch_euclidean_dist
-from src.datasets.purplebook import MetaPurpleBook, SupervisedPurpleBook, \
-                                    SupervisedPurpleBook_MetaTrain
+from src.datasets.feedback import MetaExamSolutions, SupervisedExamSolutions
 
 
 class BaseCodeMetaAgent(BaseAgent):
@@ -47,7 +46,7 @@ class BaseCodeMetaAgent(BaseAgent):
         else:
             roberta_device = f'cuda:{self.config.gpu_device}'
 
-        self.train_dataset = MetaPurpleBook(
+        self.train_dataset = MetaExamSolutions(
             data_root=self.config.data_root,
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
@@ -67,8 +66,6 @@ class BaseCodeMetaAgent(BaseAgent):
             roberta_config=self.config.model.config,
             roberta_device=roberta_device,
             conservative=self.config.dataset.train.conservative,
-            add_cs106_assignments=self.config.dataset.train.add_cs106_assignments,
-            add_cip20=self.config.dataset.train.add_cip20,
             cloze_tasks_factor=self.config.dataset.train.cloze_tasks_factor,
             execution_tasks_factor=self.config.dataset.train.execution_tasks_factor,
             smlmt_tasks_factor=self.config.dataset.train.smlmt_tasks_factor,
@@ -77,7 +74,7 @@ class BaseCodeMetaAgent(BaseAgent):
             hold_out_category=self.config.dataset.hold_out_category,
             enforce_binary=self.config.dataset.enforce_binary,
         )
-        self.test_dataset = MetaPurpleBook(
+        self.test_dataset = MetaExamSolutions(
             data_root=self.config.data_root,
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
@@ -96,7 +93,6 @@ class BaseCodeMetaAgent(BaseAgent):
             roberta_device=roberta_device,
             pad_to_max_num_class=self.config.optim.batch_size > 1,
             conservative=self.config.dataset.train.conservative,
-            add_cs106_assignments=self.train_dataset.add_cs106_assignments,
             cloze_tasks_factor=self.train_dataset.cloze_tasks_factor,
             execution_tasks_factor=self.train_dataset.execution_tasks_factor,
             smlmt_tasks_factor=self.config.dataset.train.smlmt_tasks_factor,
@@ -1070,7 +1066,7 @@ class CodeSupervisedAgent(BaseAgent):
         self.test_acc   = []
 
     def _load_datasets(self):
-        self.train_dataset = SupervisedPurpleBook(
+        self.train_dataset = SupervisedExamSolutions(
             self.config.dataset.task_index,
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
@@ -1087,7 +1083,7 @@ class CodeSupervisedAgent(BaseAgent):
             enforce_binary=self.config.dataset.enforce_binary,
             pad_to_max_num_class=self.config.optim.batch_size > 1,
         )
-        self.test_dataset = SupervisedPurpleBook(
+        self.test_dataset = SupervisedExamSolutions(
             self.config.dataset.task_index,
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
@@ -1427,58 +1423,3 @@ class CodeSupervisedAgent(BaseAgent):
         except OSError as e:
             self.logger.info("Checkpoint doesnt exists: [{}]".format(filename))
             raise e
-
-
-class CodeSupervisedMetaTrainAgent(CodeSupervisedAgent):
-
-    def _load_datasets(self):
-        train_dataset_i = SupervisedPurpleBook(
-            self.config.dataset.task_index,
-            n_shots=self.config.dataset.train.n_shots,
-            n_queries=self.config.dataset.test.n_queries,
-            data_root=self.config.data_root,
-            roberta_rubric=self.config.dataset.train.roberta_rubric,
-            roberta_prompt=self.config.dataset.train.roberta_prompt,
-            roberta_config=self.config.model.config,
-            max_seq_len=self.config.dataset.max_seq_len,
-            min_occ=self.config.dataset.min_occ,
-            train=True,  # training portion of meta-test task
-            meta_train=False, 
-            hold_out_split=self.config.dataset.hold_out_split,
-            hold_out_category=self.config.dataset.hold_out_category,
-            enforce_binary=self.config.dataset.enforce_binary,
-            pad_to_max_num_class=False,
-        )
-        self.train_dataset = SupervisedPurpleBook_MetaTrain(
-            n_shots=self.config.dataset.train.n_shots,
-            n_queries=self.config.dataset.test.n_queries,
-            data_root=self.config.data_root,
-            roberta_rubric=self.config.dataset.train.roberta_rubric,
-            roberta_prompt=self.config.dataset.train.roberta_prompt,
-            roberta_config=self.config.model.config,
-            max_seq_len=self.config.dataset.max_seq_len,
-            min_occ=self.config.dataset.min_occ,
-            hold_out_split=self.config.dataset.hold_out_split,
-            hold_out_category=self.config.dataset.hold_out_category,
-            enforce_binary=self.config.dataset.enforce_binary,
-            pad_to_max_num_class=False,
-            aux_dataset=train_dataset_i,
-        )
-        self.test_dataset = SupervisedPurpleBook(  # to find the length of test_dataset
-            self.config.dataset.task_index,
-            n_shots=self.config.dataset.train.n_shots,
-            n_queries=self.config.dataset.test.n_queries,
-            data_root=self.config.data_root,
-            roberta_rubric=self.config.dataset.train.roberta_rubric,
-            roberta_prompt=self.config.dataset.train.roberta_prompt,
-            roberta_config=self.config.model.config,
-            max_seq_len=self.config.dataset.max_seq_len,
-            min_occ=self.config.dataset.min_occ,
-            train=False,  # test portion of meta-test task
-            meta_train=False, 
-            hold_out_split=self.config.dataset.hold_out_split,
-            hold_out_category=self.config.dataset.hold_out_category,
-            enforce_binary=self.config.dataset.enforce_binary,
-            pad_to_max_num_class=False,
-        )
-
