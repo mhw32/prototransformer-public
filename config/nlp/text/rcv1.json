@@ -1,5 +1,5 @@
 {
-    "exp_base": "/mnt/fs5/wumike/metametric/trained_models/<DATE>",
+    "exp_base": null,
     "exp_name": "rcv1_5shot_proto_transformer",
     "agent": "NLPPrototypeNetAgent",
     "cuda": true,
@@ -8,7 +8,7 @@
     "data_loader_workers": 4,
     "dataset": {
         "name": "fs_rcv1",
-        "data_root": "/data5/wumike/metacode/nlp/few_shot_text/rcv1.json",
+        "data_root": null,
         "train": {
             "n_ways": 5,
             "n_shots": 5,

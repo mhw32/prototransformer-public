@@ -1,26 +1,11 @@
 """Evaluate accuracy for 1000 episodes on test set."""
 
 import os
-import torch
 import numpy as np
-from pprint import pprint
-from copy import deepcopy
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
 
 from src.agents.nlp import *
 from src.utils.setup import process_config, process_config_from_json
-from src.objectives.prototype import batch_euclidean_dist
 from src.datasets.text import *
-from src.utils import utils
-
-from sklearn.metrics import (
-    precision_recall_curve, 
-    average_precision_score,
-    roc_auc_score,
-    accuracy_score,
-    roc_curve,
-)
 
 def evaluate(args, gpu_device=-1):
     config_path = os.path.join(args.exp_dir, 'config.json')
@@ -46,7 +31,6 @@ def evaluate(args, gpu_device=-1):
         load_epoch=True,
     )
     # turn on eval mode
-    skipped = 0
     agent.model.eval()
 
     class_dict = {
@@ -65,7 +49,7 @@ def evaluate(args, gpu_device=-1):
         n_queries=config.dataset.test.n_queries,
         split='test',
     )
-    test_loader, test_len = agent._create_test_dataloader(
+    test_loader, _ = agent._create_test_dataloader(
         test_dataset,
         config.optim.batch_size,
     )

@@ -1,5 +1,5 @@
 {
-    "exp_base": "/mnt/fs5/wumike/metametric/trained_models/<DATE>",
+    "exp_base": null,
     "exp_name": "newsgroup_1shot4way_no_pretrain",
     "agent": "NLPPrototypeNetAgent",
     "cuda": true,

@@ -12,13 +12,6 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 def run(args, gpu_device=0):
     config_json = load_json(args.config)
     config_json['gpu_device'] = gpu_device
-
-    if args.iris_cluster:
-        config_json['exp_base'] = config_json['exp_base'].replace('/mnt/fs5', '/iris/u')
-        config_json['data_root'] = '/iris/u/wumike'
-    else:
-        config_json['data_root'] = '/data5/wumike'
-
     config_json['dataset']['task_index'] = args.task_index
     exp_name_suffix = build_exp_name_suffix(args)
 
@@ -51,7 +44,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('config', type=str, help='path to config file')
     parser.add_argument('--task-index', type=int, default=0)
-    parser.add_argument('--iris-cluster', action='store_true', default=False)
     parser.add_argument('--gpu-device', type=int, default=0)
     args = parser.parse_args()
     run(args, gpu_device=args.gpu_device)

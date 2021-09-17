@@ -1,5 +1,5 @@
 {
-    "exp_base": "/mnt/fs5/wumike/metametric/trained_models/<DATE>",
+    "exp_base": null,
     "exp_name": "experiment_augamt_ablations_1percent",
     "agent": "CodePrototypeNetAgent",
     "cuda": true,

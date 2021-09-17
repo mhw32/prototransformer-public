@@ -1,6 +1,4 @@
 import os
-import copy
-import time
 import numpy as np
 from tqdm import tqdm
 from dotmap import DotMap
@@ -12,7 +10,6 @@ from scipy import stats
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from transformers import (
     RobertaConfig,
     RobertaModel,
@@ -29,10 +26,9 @@ from src.models.relation import RelationNetwork
 from src.models.task import TaskEmbedding
 from src.models.signatures import DistSign
 from src.agents.base import BaseAgent
-from src.objectives.prototype import euclidean_dist, batch_euclidean_dist
+from src.objectives.prototype import batch_euclidean_dist
 from src.datasets.purplebook import MetaPurpleBook, SupervisedPurpleBook, \
-                                    EmbedPurpleBook, SupervisedPurpleBook_MetaTrain
-from sklearn import metrics
+                                    SupervisedPurpleBook_MetaTrain
 
 
 class BaseCodeMetaAgent(BaseAgent):
@@ -52,7 +48,7 @@ class BaseCodeMetaAgent(BaseAgent):
             roberta_device = f'cuda:{self.config.gpu_device}'
 
         self.train_dataset = MetaPurpleBook(
-            data_root=self.config.data_root or '/data5/wumike',
+            data_root=self.config.data_root,
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
             train=True,
@@ -78,11 +74,11 @@ class BaseCodeMetaAgent(BaseAgent):
             smlmt_tasks_factor=self.config.dataset.train.smlmt_tasks_factor,
             pad_to_max_num_class=self.config.optim.batch_size > 1,
             hold_out_split=self.config.dataset.hold_out_split,
-            hold_out_category=self.config.dataset.hold_out_category or 'exam',
+            hold_out_category=self.config.dataset.hold_out_category,
             enforce_binary=self.config.dataset.enforce_binary,
         )
         self.test_dataset = MetaPurpleBook(
-            data_root=self.config.data_root or '/data5/wumike',
+            data_root=self.config.data_root,
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
             train=False,
@@ -105,7 +101,7 @@ class BaseCodeMetaAgent(BaseAgent):
             execution_tasks_factor=self.train_dataset.execution_tasks_factor,
             smlmt_tasks_factor=self.config.dataset.train.smlmt_tasks_factor,
             hold_out_split=self.config.dataset.hold_out_split,
-            hold_out_category=self.config.dataset.hold_out_category or 'exam',
+            hold_out_category=self.config.dataset.hold_out_category,
             enforce_binary=self.config.dataset.enforce_binary,
         )
 
@@ -1029,19 +1025,8 @@ class CodeSignaturesAgent(CodePrototypeNetAgent):
     def _create_model(self):
         super()._create_model()
         model_args = {
-        #     'pos_ebd_dim': 5,
-        #     'pos_max_len': self.config.dataset.max_seq_len,
             'way': 2,
             'shot': self.config.dataset.train.n_shots,
-        #     'meta_idf': False,
-        #     'meta_w_target': True,
-        #     'meta_w_target_lam': 1,
-        #     'meta_target_entropy': False,
-        #     'meta_iwf': True,
-        #     'meta_ebd': False,
-        #     'embedding': 'meta',
-        #     'dropout': 0.1,
-        #     'auxiliary': [],
         }
         model_args = DotMap(model_args)
         self.signature = DistSign(self.model, model_args)
@@ -1089,7 +1074,7 @@ class CodeSupervisedAgent(BaseAgent):
             self.config.dataset.task_index,
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
-            data_root=self.config.data_root or '/data5/wumike',
+            data_root=self.config.data_root,
             roberta_rubric=self.config.dataset.train.roberta_rubric,
             roberta_prompt=self.config.dataset.train.roberta_prompt,
             roberta_config=self.config.model.config,
@@ -1098,7 +1083,7 @@ class CodeSupervisedAgent(BaseAgent):
             train=True,
             meta_train=True,
             hold_out_split=self.config.dataset.hold_out_split,
-            hold_out_category=self.config.dataset.hold_out_category or 'exam',
+            hold_out_category=self.config.dataset.hold_out_category,
             enforce_binary=self.config.dataset.enforce_binary,
             pad_to_max_num_class=self.config.optim.batch_size > 1,
         )
@@ -1106,7 +1091,7 @@ class CodeSupervisedAgent(BaseAgent):
             self.config.dataset.task_index,
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
-            data_root=self.config.data_root or '/data5/wumike',
+            data_root=self.config.data_root,
             roberta_rubric=self.config.dataset.train.roberta_rubric,
             roberta_prompt=self.config.dataset.train.roberta_prompt,
             roberta_config=self.config.model.config,
@@ -1115,7 +1100,7 @@ class CodeSupervisedAgent(BaseAgent):
             train=False,
             meta_train=True,  # always True
             hold_out_split=self.config.dataset.hold_out_split,
-            hold_out_category=self.config.dataset.hold_out_category or 'exam',
+            hold_out_category=self.config.dataset.hold_out_category,
             enforce_binary=self.config.dataset.enforce_binary,
             pad_to_max_num_class=self.config.optim.batch_size > 1,
         )
@@ -1132,8 +1117,6 @@ class CodeSupervisedAgent(BaseAgent):
         )
 
     def _create_model(self):
-        max_seq_len = self.config.dataset.max_seq_len
-    
         if self.config.model.name == 'transformer':
             vocab_size = self.train_dataset.vocab_size
             model = CodeTransformerEncoder(
@@ -1150,7 +1133,6 @@ class CodeSupervisedAgent(BaseAgent):
                 is_tadam=self.config.model.task_tadam,
                 is_adapter=self.config.model.task_adapter,
             )
-            d_embedding = self.config.model.d_model 
         elif self.config.model.name == 'roberta':
             model = RobertaModel.from_pretrained(
                 self.config.model.config,
@@ -1159,8 +1141,7 @@ class CodeSupervisedAgent(BaseAgent):
                 is_adapter=self.config.model.task_adapter,
             )
             utils.reset_model_for_training(model)
-            d_embedding = model.config.hidden_size
-            
+
             if self.config.model.finetune:
                 for param in model.parameters():
                     param.requires_grad = False
@@ -1206,7 +1187,7 @@ class CodeSupervisedAgent(BaseAgent):
                 is_adapter=self.config.model.task_adapter,
             )
             utils.reset_model_for_training(model)
-            d_embedding = model.config.hidden_size
+
             if self.config.model.finetune:
                 for param in model.parameters():
                     param.requires_grad = False
@@ -1243,14 +1224,7 @@ class CodeSupervisedAgent(BaseAgent):
             eps=1e-6,
             weight_decay=0.01,
         )
-        # num_training_steps = len(self.train_dataset) * self.config.optim.num_epochs
-        # scheduler = get_linear_schedule_with_warmup(
-        #     optimizer,
-        #     num_warmup_steps=self.config.optim.warmup_steps,
-        #     num_training_steps=num_training_steps,
-        # )
         self.optim = optimizer
-        # self.scheduler = scheduler
         self.config.optim.use_scheduler = False
 
     def compute_masked_means(self, outputs, masks):
@@ -1462,7 +1436,7 @@ class CodeSupervisedMetaTrainAgent(CodeSupervisedAgent):
             self.config.dataset.task_index,
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
-            data_root=self.config.data_root or '/data5/wumike',
+            data_root=self.config.data_root,
             roberta_rubric=self.config.dataset.train.roberta_rubric,
             roberta_prompt=self.config.dataset.train.roberta_prompt,
             roberta_config=self.config.model.config,
@@ -1471,21 +1445,21 @@ class CodeSupervisedMetaTrainAgent(CodeSupervisedAgent):
             train=True,  # training portion of meta-test task
             meta_train=False, 
             hold_out_split=self.config.dataset.hold_out_split,
-            hold_out_category=self.config.dataset.hold_out_category or 'exam',
+            hold_out_category=self.config.dataset.hold_out_category,
             enforce_binary=self.config.dataset.enforce_binary,
             pad_to_max_num_class=False,
         )
         self.train_dataset = SupervisedPurpleBook_MetaTrain(
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
-            data_root=self.config.data_root or '/data5/wumike',
+            data_root=self.config.data_root,
             roberta_rubric=self.config.dataset.train.roberta_rubric,
             roberta_prompt=self.config.dataset.train.roberta_prompt,
             roberta_config=self.config.model.config,
             max_seq_len=self.config.dataset.max_seq_len,
             min_occ=self.config.dataset.min_occ,
             hold_out_split=self.config.dataset.hold_out_split,
-            hold_out_category=self.config.dataset.hold_out_category or 'exam',
+            hold_out_category=self.config.dataset.hold_out_category,
             enforce_binary=self.config.dataset.enforce_binary,
             pad_to_max_num_class=False,
             aux_dataset=train_dataset_i,
@@ -1494,7 +1468,7 @@ class CodeSupervisedMetaTrainAgent(CodeSupervisedAgent):
             self.config.dataset.task_index,
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
-            data_root=self.config.data_root or '/data5/wumike',
+            data_root=self.config.data_root,
             roberta_rubric=self.config.dataset.train.roberta_rubric,
             roberta_prompt=self.config.dataset.train.roberta_prompt,
             roberta_config=self.config.model.config,
@@ -1503,7 +1477,7 @@ class CodeSupervisedMetaTrainAgent(CodeSupervisedAgent):
             train=False,  # test portion of meta-test task
             meta_train=False, 
             hold_out_split=self.config.dataset.hold_out_split,
-            hold_out_category=self.config.dataset.hold_out_category or 'exam',
+            hold_out_category=self.config.dataset.hold_out_category,
             enforce_binary=self.config.dataset.enforce_binary,
             pad_to_max_num_class=False,
         )

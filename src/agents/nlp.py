@@ -1,30 +1,22 @@
 import os
-import copy
-import time
 import numpy as np
 from tqdm import tqdm
-from dotmap import DotMap
 from itertools import chain
-from collections import OrderedDict
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from transformers import (
     RobertaConfig,
     RobertaModel,
-    RobertaForMaskedLM,
     get_linear_schedule_with_warmup,
 )
-
 from src.utils import utils
 from src.models.codelstm import CodeLSTMEncoder
-from src.models.monkeypatch import RobertaModel, RobertaForMaskedLM
+from src.models.monkeypatch import RobertaModel
 from src.models.context import ContextEncoder, AttentionEncoder
-from src.models.task import NLPTaskEmbedding
 from src.agents.base import BaseAgent
-from src.objectives.prototype import euclidean_dist, batch_euclidean_dist
+from src.objectives.prototype import batch_euclidean_dist
 from src.datasets.nlp import MetaNewsGroup, SupNewsGroup
 from src.datasets.amazon import FewShotAmazonSentiment
 from src.datasets.text import (
@@ -35,7 +27,6 @@ from src.datasets.text import (
     FewShotReuters,
     FewShotFewRel,
 )
-from sklearn import metrics
 
 
 class BaseNLPMetaAgent(BaseAgent):

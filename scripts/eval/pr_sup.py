@@ -4,10 +4,8 @@ Compute the Precision-Recall Curve given a trained model.
 
 import os
 import torch
-from copy import deepcopy
 from src.agents.purplebook import *
 from src.utils.setup import process_config, process_config_from_json
-from src.utils import utils
 
 from sklearn.metrics import (
     precision_recall_curve, 
