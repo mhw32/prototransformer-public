@@ -29,7 +29,7 @@ There are a number of datasets used in the NLP experiments.
 - From [Bao et. al.](https://arxiv.org/pdf/1908.06039), we use the suite of few-shot text datasets spanning news, rcv1, reuters, etc. The data can be found [here](https://github.com/YujiaBao/Distributional-Signatures).
 - We repurpose the 20-newsgroups dataset for a few-shot topic classification task. You can download the raw 20-newsgroups datasets [here](http://qwone.com/~jason/20Newsgroups/).
 
-Unfortunately, we cannot release the dataset of student responses to university level programming assignments due to privacy concerns. We are working towards a publically shareably version in the near future.
+Unfortunately, we **cannot release** the dataset of student responses to university level programming assignments due to privacy concerns. We are working towards a publically shareably version in the near future.
 
 ## Usage
 

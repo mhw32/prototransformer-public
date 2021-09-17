@@ -1,6 +1,4 @@
 import os
-from dotmap import DotMap
-from copy import deepcopy
 from src.agents.purplebook import *
 from src.agents.nlp import *
 from src.utils.setup import process_config_from_json

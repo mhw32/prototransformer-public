@@ -15,19 +15,13 @@ https://arxiv.org/pdf/1908.06039.pdf
 """
 
 import os
-import re
 import json
-import copy
-import string
-import pickle
 import numpy as np
 from tqdm import tqdm
 
 import torch
 from torch.utils.data.dataset import Dataset
 from collections import Counter, defaultdict
-
-from src.models.sentencebert import SentenceBERT
 from transformers import RobertaTokenizer
 
 

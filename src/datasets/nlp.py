@@ -1,28 +1,14 @@
 import os
-import io
-import re
-import sys
-import json
 import copy
-import math
-import logging
-import random
-import pickle
 import torch
-import hashlib
 import itertools
 import numpy as np
-import pandas as pd
-from glob import glob
 from tqdm import tqdm
-from collections import defaultdict, Counter
+from collections import Counter
 from torch.utils.data.dataset import Dataset
 from sklearn.datasets import fetch_20newsgroups
-
-from src.models.sentencebert import SentenceBERT
-from src.utils.utils import OrderedCounter, string_concat
-from src.utils.python_utils import PYTHON_KEYWORDS, camel_to_snake
 from transformers import RobertaTokenizer
+from src.models.sentencebert import SentenceBERT
 
 
 class BaseMetaNLPDataset(Dataset):

@@ -9,7 +9,7 @@ import logging
 
 import torch
 import torch.nn as nn
-from torch.nn import CrossEntropyLoss, MSELoss
+from torch.nn import CrossEntropyLoss
 
 from transformers.activations import ACT2FN, gelu
 from transformers import RobertaConfig

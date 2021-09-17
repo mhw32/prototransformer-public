@@ -2,7 +2,6 @@
 Sentence embeddings from BERT.
 https://github.com/UKPLab/sentence-transformers
 """
-import numpy as np
 import torch
 import torch.nn as nn
 from sentence_transformers import SentenceTransformer

@@ -1,13 +1,10 @@
 import os
 import io
 import re
-import sys
 import json
 import copy
 import math
-import logging
 import random
-import pickle
 import torch
 import hashlib
 import numpy as np
@@ -21,7 +18,6 @@ from src.models.sentencebert import SentenceBERT
 from src.utils.utils import OrderedCounter, string_concat
 from src.utils.python_utils import PYTHON_KEYWORDS, camel_to_snake
 from transformers import RobertaTokenizer
-from src.utils import javalang
 import tokenize as pythonlang
 
 PAD_TOKEN = '<pad>'

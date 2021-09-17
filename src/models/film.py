@@ -1,7 +1,4 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
 from torch.nn.modules.transformer import _get_activation_fn
 
 
