@@ -41,6 +41,22 @@ source init_env.sh
 
 to add the correct paths to `sys.path` before running anything else.
 
+To train models, try the following command:
+
+```
+python scripts/nlp.py <CONFIG_PATH>
+```
+
+where `<CONFIG_PATH>` points to one of the files in the `configs` folder. For every configuration folder, it will need to be updated with a experiment directory `exp_dir` and any root directories for data `data_root`. Those two values are currently defaulted to `null` which training will complain about. 
+
+To evaluate models, try the following command:
+
+```
+python scripts/eval/pr_text.py <EXP_DIR> --checkpoint-file <CHECKPOINT_FILE>
+```
+
+which will compute accuracy, precision, ROC-AUC, among other metrics.
+
 ## Citation
 
 If you find this useful for your research, please cite:
