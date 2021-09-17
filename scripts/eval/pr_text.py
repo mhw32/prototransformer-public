@@ -7,6 +7,7 @@ from src.agents.nlp import *
 from src.utils.setup import process_config, process_config_from_json
 from src.datasets.text import *
 
+
 def evaluate(args, gpu_device=-1):
     config_path = os.path.join(args.exp_dir, 'config.json')
     checkpoint_dir = os.path.join(args.exp_dir, 'checkpoints')

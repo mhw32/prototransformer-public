@@ -1,5 +1,5 @@
 import os
-from src.agents.purplebook import *
+from src.agents.feedback import *
 from src.agents.nlp import *
 from src.utils.setup import process_config_from_json
 from src.utils.utils import load_json

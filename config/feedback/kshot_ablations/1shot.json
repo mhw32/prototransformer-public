@@ -12,7 +12,6 @@
             "augment_by_rubric": true,
             "roberta_rubric": true,
             "roberta_prompt": true,
-            "add_cs106_assignments": false, 
             "n_shots": 1,
             "conservative": true,
             "cloze_tasks_factor": 0,

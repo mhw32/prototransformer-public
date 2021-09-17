@@ -5,8 +5,6 @@ Compute the Precision-Recall Curve on Amazon.
 import os
 import torch
 import numpy as np
-from pprint import pprint
-from copy import deepcopy
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
@@ -14,15 +12,6 @@ from src.agents.nlp import *
 from src.utils.setup import process_config, process_config_from_json
 from src.objectives.prototype import batch_euclidean_dist
 from src.datasets.amazon import EvalFewShotAmazonSentiment
-from src.utils import utils
-
-from sklearn.metrics import (
-    precision_recall_curve, 
-    average_precision_score,
-    roc_auc_score,
-    accuracy_score,
-    roc_curve,
-)
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -54,11 +43,14 @@ def pr_curve(args, gpu_device=-1):
     task_test_acc = []
     for i in range(12):
         print(f'Evaluating dataset ({i+1}/12)')
-        test_dataset = EvalFewShotAmazonSentiment(config.dataset.data_root, i,
-                                                  n_shots=config.dataset.test.n_shots)
-        test_loader = DataLoader(test_dataset, batch_size=32,  # might be too high
-                                 shuffle=False, pin_memory=True,
-                                 num_workers=config.data_loader_workers)
+        test_dataset = EvalFewShotAmazonSentiment(
+            config.dataset.data_root, i,
+            n_shots=config.dataset.test.n_shots)
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=32,  # might be too high
+            shuffle=False, pin_memory=True,
+            num_workers=config.data_loader_workers)
         test_accuracy = evaluate(agent, config, test_loader)
         task_test_acc.append(test_accuracy)
     task_test_acc = np.array(task_test_acc)
@@ -76,7 +68,7 @@ def pr_curve(args, gpu_device=-1):
 def evaluate(agent, config, test_loader):
     num_correct, num_total = 0, 0
     tqdm_batch = tqdm(total=len(test_loader))
-    for index, batch in enumerate(test_loader):
+    for _, batch in enumerate(test_loader):
         support_toks = test_loader.dataset.support_toks.to(agent.device)    # n_ways x n_shots x 512
         support_lens = test_loader.dataset.support_lens.to(agent.device)    # n_ways x n_shots
         support_masks = test_loader.dataset.support_masks.to(agent.device)  # n_ways x n_shots x 512
@@ -107,13 +99,19 @@ def evaluate(agent, config, test_loader):
             support_sides, query_sides = None, None
 
         if config.model.name == 'lstm':
-            support_features = agent.model(support_toks, support_lens, tam_embeds=support_sides)
-            query_features = agent.model(query_toks, query_lens, tam_embeds=query_sides)
+            support_features = agent.model(
+                support_toks, support_lens, tam_embeds=support_sides)
+            query_features = agent.model(
+                query_toks, query_lens, tam_embeds=query_sides)
         else:
             support_features = agent.model(
-                input_ids=support_toks, attention_mask=support_masks, tam_embeds=support_sides)[0]
+                input_ids=support_toks,
+                attention_mask=support_masks,
+                tam_embeds=support_sides)[0]
             query_features = agent.model(
-                input_ids=query_toks, attention_mask=query_masks, tam_embeds=query_sides)[0]
+                input_ids=query_toks,
+                attention_mask=query_masks,
+                tam_embeds=query_sides)[0]
             support_features = agent.compute_masked_means(support_features, support_masks)
             query_features = agent.compute_masked_means(query_features, query_masks)
 
@@ -135,6 +133,7 @@ def evaluate(agent, config, test_loader):
         num_total += mb
         tqdm_batch.update()
     tqdm_batch.close()
+
     return num_correct / float(num_total)
 
 

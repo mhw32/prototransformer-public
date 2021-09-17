@@ -4,10 +4,11 @@ Compute the Precision-Recall Curve given a trained model.
 
 import os
 import torch
+import numpy as np
+from tqdm import tqdm
 from pprint import pprint
-from copy import deepcopy
-from src.agents.purplebook import *
-from src.utils.setup import process_config, process_config_from_json
+from src.agents.feedback import *
+from src.utils.setup import process_config_from_json
 from src.utils import utils
 
 from sklearn.metrics import (
@@ -28,11 +29,6 @@ def pr_curve(args, gpu_device=-1):
         os.makedirs(analysis_dir)
 
     config = utils.load_json(config_path)
-
-    for key in ['exp_base', 'exp_dir', 'checkpoint_dir', 'out_dir', 'log_dir']:
-        config[key] = config[key].replace('/iris/u', '/mnt/fs5')
-    config['data_root'] = '/data5/wumike'
-
     config = process_config_from_json(config)
 
     if gpu_device >= 0: config.gpu_device = gpu_device
