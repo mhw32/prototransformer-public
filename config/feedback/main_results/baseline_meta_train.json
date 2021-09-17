@@ -1,0 +1,50 @@
+{
+    "exp_base": "/mnt/fs5/wumike/metametric/trained_models/<DATE>",
+    "exp_name": "experiment_main_results_baseline_meta_train",
+    "agent": "CodeSupervisedMetaTrainAgent",
+    "cuda": true,
+    "gpu_device": 8,
+    "seed": 42,
+    "data_loader_workers": 4,
+    "dataset": {
+        "train": {
+            "roberta_rubric": true,
+            "roberta_prompt": true,
+            "n_shots": 10
+        },
+        "test": {
+            "n_queries": 10
+        },
+        "task_index": null,
+        "train_frac": 0.9,
+        "hold_out_split": true,
+        "enforce_binary": true,
+        "max_seq_len": 512,
+        "min_occ": 1
+    },
+    "optim": {
+        "batch_size": 20,
+        "learning_rate": 1e-4,
+        "weight_decay": 0,
+        "patience": 1000,
+        "num_epochs": 100,
+        "warmup_steps": 10000,
+        "use_scheduler": false
+    },
+    "model": {
+        "name": "roberta",
+        "config": "microsoft/codebert-base",
+        "d_model": 768,
+        "task_concat": false,
+        "task_tam": true,
+        "task_tadam": false,
+        "task_adapter": false,
+        "finetune": true,
+        "finetune_layers": 3
+    },
+    "validate": false,
+    "validate_freq": 1,
+    "copy_checkpoint_freq": 10,
+    "continue_exp_dir": null,
+    "continue_exp_name": null
+}
