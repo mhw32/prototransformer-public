@@ -1,14 +1,14 @@
 {
-    "exp_base": null,
+    "exp_base": "./config/nlp/text/exp_dir/<DATE>",
     "exp_name": "20news_5shot_proto_transformer",
     "agent": "NLPPrototypeNetAgent",
-    "cuda": true,
+    "cuda": false,
     "gpu_device": 8,
     "seed": 42,
     "data_loader_workers": 4,
     "dataset": {
         "name": "fs_20news",
-        "data_root": null,
+        "data_root": "./config/nlp/text/data_root/data/20news.json",
         "train": {
             "n_ways": 5,
             "n_shots": 5,

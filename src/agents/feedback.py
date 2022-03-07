@@ -19,7 +19,7 @@ from transformers import (
 
 from src.utils import utils
 from src.models.codelstm import CodeLSTMEncoder
-from src.models.contracode import CodeTransformerEncoder
+# from src.models.contracode import CodeTransformerEncoder # I think this is residual for a model class they don't use
 from src.models.monkeypatch import RobertaModel, RobertaForMaskedLM
 from src.models.context import ContextEncoder, AttentionEncoder
 from src.models.relation import RelationNetwork
@@ -34,7 +34,7 @@ class BaseCodeMetaAgent(BaseAgent):
 
     def __init__(self, config):
         super().__init__(config)
-        
+
         self.train_loss = []
         self.train_acc  = []
         self.test_acc   = []
@@ -104,7 +104,7 @@ class BaseCodeMetaAgent(BaseAgent):
     def _load_loaders(self):
         self.train_loader, self.train_len = self._create_dataloader(
             self.train_dataset,
-            self.config.optim.batch_size, 
+            self.config.optim.batch_size,
             shuffle=True,
         )
         self.test_loader, self.test_len = self._create_test_dataloader(
@@ -179,7 +179,7 @@ class BaseCodeMetaAgent(BaseAgent):
         elif self.config.model.name == 'roberta_scratch':
             config = RobertaConfig.from_pretrained(self.config.model.config)
             model = RobertaModel(
-                config, 
+                config,
                 is_tadam=self.config.model.task_tadam,
                 is_adapter=self.config.model.task_adapter,
             )
@@ -249,7 +249,7 @@ class BaseCodeMetaAgent(BaseAgent):
             # this is the one used for Adam
             self.optim = torch.optim.AdamW(
                 self._all_parameters(),
-                lr=self.config.optim.learning_rate, 
+                lr=self.config.optim.learning_rate,
                 betas=(0.9, 0.98),
                 weight_decay=self.config.optim.weight_decay,
             )
@@ -335,7 +335,7 @@ class BaseCodeMetaAgent(BaseAgent):
                 model_state_dict = checkpoint['model_state_dict']
                 self.model.load_state_dict(model_state_dict)
                 self.tau.data = checkpoint['tau'].to(self.tau.device)
-                
+
                 if self.config.model.task_concat:
                     concat_fusor_state_dict = checkpoint['concat_fusor_state_dict']
                     self.concat_fusor.load_state_dict(concat_fusor_state_dict)
@@ -376,11 +376,11 @@ class CodePrototypeNetAgent(BaseCodeMetaAgent):
         loss = loss.view(-1).mean()
 
         acc = utils.get_accuracy(logprobas.view(batch_size, nway*nquery, -1),
-                                 query_targets.view(batch_size, nway*nquery)) 
+                                 query_targets.view(batch_size, nway*nquery))
         return loss, acc, logprobas
 
     def compute_masked_means(self, outputs, masks):
-        # we don't want to include padding tokens 
+        # we don't want to include padding tokens
         # outputs : B x T x D
         # masks   : B x T
         dim = outputs.size(2)
@@ -455,9 +455,9 @@ class CodePrototypeNetAgent(BaseCodeMetaAgent):
         if self.config.model.name == 'lstm':
             # support_tam_features : ... x 2 x bert_dim
             # query_tam_features   : ... x 2 x bert_dim
-            support_tam_features = torch.cat([support_rubric_embs.unsqueeze(1), 
-                                              support_prompt_embs.unsqueeze(1)], dim=1) 
-            query_tam_features = torch.cat([query_rubric_embs.unsqueeze(1), 
+            support_tam_features = torch.cat([support_rubric_embs.unsqueeze(1),
+                                              support_prompt_embs.unsqueeze(1)], dim=1)
+            query_tam_features = torch.cat([query_rubric_embs.unsqueeze(1),
                                             query_prompt_embs.unsqueeze(1)], dim=1)
             # support_features: batch_size*n_ways*n_support x dim
             # query_features: batch_size*n_ways*n_query x dim
@@ -477,18 +477,18 @@ class CodePrototypeNetAgent(BaseCodeMetaAgent):
             if self.config.model.task_tam:
                 # support_tam_features : ... x 2 x bert_dim
                 # query_tam_features   : ... x 2 x bert_dim
-                support_tam_features = torch.cat([support_rubric_embs.unsqueeze(1), 
-                                                  support_prompt_embs.unsqueeze(1)], dim=1) 
-                query_tam_features = torch.cat([query_rubric_embs.unsqueeze(1), 
+                support_tam_features = torch.cat([support_rubric_embs.unsqueeze(1),
+                                                  support_prompt_embs.unsqueeze(1)], dim=1)
+                query_tam_features = torch.cat([query_rubric_embs.unsqueeze(1),
                                                 query_prompt_embs.unsqueeze(1)], dim=1)
                 support_features = self.model(
-                    input_ids=support_toks, 
-                    attention_mask=support_masks, 
+                    input_ids=support_toks,
+                    attention_mask=support_masks,
                     tam_embeds=support_tam_features,
                 )[0]
                 query_features = self.model(
-                    input_ids=query_toks, 
-                    attention_mask=query_masks, 
+                    input_ids=query_toks,
+                    attention_mask=query_masks,
                     tam_embeds=query_tam_features,
                 )[0]
             elif self.config.model.task_adapter or self.config.model.task_tadam:
@@ -496,19 +496,19 @@ class CodePrototypeNetAgent(BaseCodeMetaAgent):
                 support_task_features = torch.cat([support_rubric_embs, support_prompt_embs], dim=1)
                 query_task_features = torch.cat([query_rubric_embs, query_prompt_embs], dim=1)
                 support_features = self.model(
-                    input_ids=support_toks, 
-                    attention_mask=support_masks, 
+                    input_ids=support_toks,
+                    attention_mask=support_masks,
                     tadam_or_adapter_embeds=support_task_features,
                 )[0]
                 query_features = self.model(
-                    input_ids=query_toks, 
-                    attention_mask=query_masks, 
+                    input_ids=query_toks,
+                    attention_mask=query_masks,
                     tadam_or_adapter_embeds=query_task_features,
                 )[0]
             else:
                 support_features = self.model(input_ids=support_toks, attention_mask=support_masks)[0]
                 query_features = self.model(input_ids=query_toks, attention_mask=query_masks)[0]
-          
+
             # support_features: batch_size*n_ways*n_support x dim
             # query_features: batch_size*n_ways*n_query x dim
             support_features = self.compute_masked_means(support_features, support_masks)
@@ -552,7 +552,7 @@ class CodePrototypeNetAgent(BaseCodeMetaAgent):
         batch_size = 128
         num_total = toks.size(0)
         num_iters = (num_total // batch_size) + (num_total % batch_size != 0)
-       
+
         features = []
         start_index = 0
         for i in range(num_iters):
@@ -586,7 +586,7 @@ class CodePrototypeNetAgent(BaseCodeMetaAgent):
         bert_dim = batch['rubric_embs'].size(-1)
 
         device = query_toks.device
-        kmeans, cluster_flip = self.zero_shot_embed_task_examples(task, rubric_embs, prompt_embs, device) 
+        kmeans, cluster_flip = self.zero_shot_embed_task_examples(task, rubric_embs, prompt_embs, device)
 
         batch_size = query_toks.size(0)
         n_ways = query_toks.size(1)
@@ -611,15 +611,15 @@ class CodePrototypeNetAgent(BaseCodeMetaAgent):
             if self.config.model.task_tam:
                 # support_tam_features : ... x 2 x bert_dim
                 # query_tam_features   : ... x 2 x bert_dim
-                query_tam_features = torch.cat([query_rubric_embs.unsqueeze(1), 
+                query_tam_features = torch.cat([query_rubric_embs.unsqueeze(1),
                                                 query_prompt_embs.unsqueeze(1)], dim=1)
                 query_features = self.model(
-                    input_ids=query_toks, 
-                    attention_mask=query_masks, 
+                    input_ids=query_toks,
+                    attention_mask=query_masks,
                     tam_embeds=query_tam_features,
                 )[0]
             else:  # no support for other mechanisms for now
-                raise NotImplementedError 
+                raise NotImplementedError
 
         query_features = self.compute_masked_means(query_features, query_masks)
 
@@ -635,13 +635,13 @@ class CodePrototypeNetAgent(BaseCodeMetaAgent):
 
         if self.config.model.task_concat:
             raise NotImplementedError  # TODO: add functionality later
-      
-        prototypes = torch.stack([torch.mean(query_features[cluster_labels == c], dim=0) 
+
+        prototypes = torch.stack([torch.mean(query_features[cluster_labels == c], dim=0)
                                   for c in uniq_labels])
         prototypes = prototypes.unsqueeze(0)
         query_features = query_features.view(batch_size, n_ways, n_query, -1)
         query_labs = query_labs.view(batch_size, n_ways, n_query)
-        
+
         query_features_flat = query_features.view(batch_size, n_ways * n_query, -1)
         dists = self.tau * batch_euclidean_dist(query_features_flat, prototypes)
         probas = F.softmax(-dists, dim=2).view(batch_size, n_ways, n_query, -1)
@@ -649,13 +649,13 @@ class CodePrototypeNetAgent(BaseCodeMetaAgent):
         if len(uniq_labels) == 1:  # only predicting one label
             pads = torch.zeros_like(probas) + 1e-6
             probas = torch.cat([probas - 1e-6, pads], dim=-1)
-       
+
         logprobas = torch.log(probas)
         loss = -logprobas.gather(3, query_labs.unsqueeze(3)).squeeze()
         loss = loss.view(-1).mean()
 
         acc = utils.get_accuracy(logprobas.view(batch_size, n_ways*n_query, -1),
-                                 query_labs.view(batch_size, n_ways*n_query)) 
+                                 query_labs.view(batch_size, n_ways*n_query))
 
         return loss, acc, logprobas
 
@@ -663,7 +663,7 @@ class CodePrototypeNetAgent(BaseCodeMetaAgent):
         tqdm_batch = tqdm(total=len(self.train_loader),
                           desc="[Epoch {}]".format(self.current_epoch))
         self.model.train()
-        loss_meter = utils.AverageMeter() 
+        loss_meter = utils.AverageMeter()
         all_task_types = list(set(self.train_dataset.task_types))
         num_task_types = self.train_dataset.num_task_types
         acc_meters = [utils.AverageMeter() for _ in range(num_task_types)]
@@ -715,7 +715,7 @@ class CodePrototypeNetAgent(BaseCodeMetaAgent):
                 n_queries = self.config.dataset.test.n_queries
                 loss, acc, _ = self.forward(batch, n_shots, n_queries)
                 task_type = batch['task_type'].cpu().numpy()
-                
+
                 loss_meter.update(loss.item())
                 postfix = {"Loss": loss_meter.avg}
                 for t_, t in enumerate(all_task_types):
@@ -761,11 +761,11 @@ class CodeMatchingNetAgent(CodePrototypeNetAgent):
 
     def _all_parameters(self):
         all_parameters = [
-            self.model.parameters(), 
-            self.fce_f.parameters(), 
-            self.fce_g.parameters(), 
+            self.model.parameters(),
+            self.fce_f.parameters(),
+            self.fce_g.parameters(),
             [self.tau],
-        ]            
+        ]
         if self.config.model.task_concat:
             all_parameters.append(self.concat_fusor.parameters())
         return chain(*all_parameters)
@@ -802,7 +802,7 @@ class CodeMatchingNetAgent(CodePrototypeNetAgent):
 
         # support_targets : batch_size x n_ways * n_shots
         support_targets = support_targets.view(
-            batch_size, 
+            batch_size,
             n_ways * n_shots,
         )
         # make into one-hotted
@@ -817,12 +817,12 @@ class CodeMatchingNetAgent(CodePrototypeNetAgent):
 
         probas = probas.clamp(1e-8, 1 - 1e-8)
         logprobas = torch.log(probas)
-       
+
         loss = -logprobas.gather(3, query_targets.unsqueeze(3)).squeeze()
         loss = loss.view(-1).mean()
 
         acc = utils.get_accuracy(logprobas.view(batch_size, n_ways * n_queries, -1),
-                                 query_targets.view(batch_size, n_ways * n_queries)) 
+                                 query_targets.view(batch_size, n_ways * n_queries))
 
         return loss, acc, logprobas
 
@@ -911,8 +911,8 @@ class CodeRelationNetAgent(CodePrototypeNetAgent):
 
     def _all_parameters(self):
         all_parameters = [
-            self.model.parameters(), 
-            self.relation.parameters(), 
+            self.model.parameters(),
+            self.relation.parameters(),
             [self.tau],
         ]
         if self.config.model.task_concat:
@@ -1030,8 +1030,8 @@ class CodeSignaturesAgent(CodePrototypeNetAgent):
 
     def _all_parameters(self):
         all_parameters = [
-            # self.model.parameters(), 
-            self.signature.parameters(), 
+            # self.model.parameters(),
+            self.signature.parameters(),
             [self.tau],
         ]
         if self.config.model.task_concat:
@@ -1055,12 +1055,12 @@ class CodeSupervisedAgent(BaseAgent):
     """
     Supervised baseline: finetune a model on a single task training
     points and make predictions on the query points. We only need to
-    do this for the meta-test split. 
+    do this for the meta-test split.
     """
 
     def __init__(self, config):
         super().__init__(config)
-        
+
         self.train_loss = []
         self.train_acc  = []
         self.test_acc   = []
@@ -1104,7 +1104,7 @@ class CodeSupervisedAgent(BaseAgent):
     def _load_loaders(self):
         self.train_loader, self.train_len = self._create_dataloader(
             self.train_dataset,
-            self.config.optim.batch_size, 
+            self.config.optim.batch_size,
             shuffle=True,
         )
         self.test_loader, self.test_len = self._create_test_dataloader(
@@ -1177,7 +1177,7 @@ class CodeSupervisedAgent(BaseAgent):
         elif self.config.model.name == 'roberta_scratch':
             config = RobertaConfig.from_pretrained(self.config.model.config)
             model = RobertaModel(
-                config, 
+                config,
                 is_tam=self.config.model.task_tam,
                 is_tadam=self.config.model.task_tadam,
                 is_adapter=self.config.model.task_adapter,
@@ -1224,7 +1224,7 @@ class CodeSupervisedAgent(BaseAgent):
         self.config.optim.use_scheduler = False
 
     def compute_masked_means(self, outputs, masks):
-        # we don't want to include padding tokens 
+        # we don't want to include padding tokens
         # outputs : B x T x D
         # masks   : B x T
         dim = outputs.size(2)
@@ -1268,7 +1268,7 @@ class CodeSupervisedAgent(BaseAgent):
         probas = torch.sigmoid(logits)
         labels = labels.unsqueeze(1).float()
         loss = F.binary_cross_entropy(probas, labels)
-        
+
         with torch.no_grad():
             preds = torch.round(probas)
             correct = preds.eq(labels).sum().item()
@@ -1280,7 +1280,7 @@ class CodeSupervisedAgent(BaseAgent):
         tqdm_batch = tqdm(total=len(self.train_loader),
                           desc="[Epoch {}]".format(self.current_epoch))
         self.model.train()
-        loss_meter = utils.AverageMeter() 
+        loss_meter = utils.AverageMeter()
         acc_meter = utils.AverageMeter()
 
         for batch in self.train_loader:
