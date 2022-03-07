@@ -80,7 +80,7 @@ class BaseAgent(object):
 
     def _create_dataloader(self, dataset, batch_size, shuffle=True):
         dataset_size = len(dataset)
-        loader = DataLoader(dataset, batch_size=batch_size, 
+        loader = DataLoader(dataset, batch_size=batch_size,
                             shuffle=shuffle, pin_memory=True,
                             num_workers=self.config.data_loader_workers)
 
