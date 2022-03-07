@@ -404,7 +404,6 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
                 postfix = {"Loss": loss_meter.avg}
                 for t_, t in enumerate(all_task_types):
                     if sum(task_type == t) > 0:
-                        print(sum(task_type == t))
                         acc_meters[t_].update(acc[task_type == t].mean())
                         postfix[f"Acc{t}"] = acc_meters[t_].avg
                         acc_stores[t_].append(acc[task_type == t].mean())
