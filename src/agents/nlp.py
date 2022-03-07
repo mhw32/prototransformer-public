@@ -105,7 +105,7 @@ class BaseNLPMetaAgent(BaseAgent):
     def _load_loaders(self):
         self.train_loader, self.train_len = self._create_dataloader(
             self.train_dataset,
-            self.config.optim.batch_size, 
+            self.config.optim.batch_size,
             shuffle=True,
         )
         self.test_loader, self.test_len = self._create_test_dataloader(
@@ -157,7 +157,7 @@ class BaseNLPMetaAgent(BaseAgent):
         tau = nn.Parameter(torch.ones(1)).to(self.device)
         tau = tau.detach().requires_grad_(True)
         self.tau = tau
-    
+
     def _all_parameters(self):
         return chain(self.model.parameters(), [self.tau])
 
@@ -278,13 +278,13 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         loss = loss.view(-1).mean()
 
         acc = utils.get_accuracy(logprobas.view(batch_size, nway*nquery, -1),
-                                 query_targets.view(batch_size, nway*nquery)) 
+                                 query_targets.view(batch_size, nway*nquery))
         return loss, acc, logprobas
 
     def compute_masked_means(self, outputs, masks):
         dim = outputs.size(2)
         masks_dim = masks.unsqueeze(2).repeat(1, 1, dim)
-        masked_outputs = outputs * masks_dim  
+        masked_outputs = outputs * masks_dim
         partition = torch.sum(masks, dim=1, keepdim=True)
         masked_outputs = torch.sum(masked_outputs, dim=1) / partition
         return masked_outputs
@@ -319,7 +319,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
             # query_sides   : batch_size*n_ways*n_queries x bert_dim
             support_sides = side_info.repeat(batch_size * n_ways * n_shots, 1)
             query_sides = side_info.repeat(batch_size * n_ways * n_queries, 1)
-        
+
             # support_sides: batch_size*n_ways*n_shots x 1 x bert_dim
             # query_sides  : batch_size*n_ways*n_queries x 1 x bert_dim
             support_sides = support_sides.unsqueeze(1)
@@ -348,7 +348,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         tqdm_batch = tqdm(total=len(self.train_loader),
                           desc="[Epoch {}]".format(self.current_epoch))
         self.model.train()
-        loss_meter = utils.AverageMeter() 
+        loss_meter = utils.AverageMeter()
         all_task_types = range(2)
         acc_meters = [utils.AverageMeter() for _ in all_task_types]
 
@@ -399,11 +399,12 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
                 n_queries = self.config.dataset.test.n_queries
                 loss, acc, _ = self.forward(batch, n_shots, n_queries)
                 task_type = batch['task_type'].cpu().numpy()
-                
+
                 loss_meter.update(loss.item())
                 postfix = {"Loss": loss_meter.avg}
                 for t_, t in enumerate(all_task_types):
                     if sum(task_type == t) > 0:
+                        print(sum(task_type == t))
                         acc_meters[t_].update(acc[task_type == t].mean())
                         postfix[f"Acc{t}"] = acc_meters[t_].avg
                         acc_stores[t_].append(acc[task_type == t].mean())
@@ -464,12 +465,12 @@ class NLPMatchingNetAgent(NLPPrototypeNetAgent):
 
         probas = probas.clamp(1e-8, 1 - 1e-8)
         logprobas = torch.log(probas)
-       
+
         loss = -logprobas.gather(3, query_targets.unsqueeze(3)).squeeze()
         loss = loss.view(-1).mean()
 
         acc = utils.get_accuracy(logprobas.view(batch_size, n_ways * n_queries, -1),
-                                 query_targets.view(batch_size, n_ways * n_queries)) 
+                                 query_targets.view(batch_size, n_ways * n_queries))
 
         return loss, acc, logprobas
 
@@ -541,7 +542,7 @@ class BaseNLPSupAgent(BaseAgent):
 
     def __init__(self, config):
         super().__init__(config)
-        
+
         self.train_loss = []
         self.train_acc  = []
         self.test_acc   = []
@@ -570,7 +571,7 @@ class BaseNLPSupAgent(BaseAgent):
     def _load_loaders(self):
         self.train_loader, self.train_len = self._create_dataloader(
             self.train_dataset,
-            self.config.optim.batch_size, 
+            self.config.optim.batch_size,
             shuffle=True,
         )
         self.test_loader, self.test_len = self._create_test_dataloader(
@@ -607,7 +608,7 @@ class BaseNLPSupAgent(BaseAgent):
         self.optim = optimizer
 
     def compute_masked_means(self, outputs, masks):
-        # we don't want to include padding tokens 
+        # we don't want to include padding tokens
         # outputs : B x T x D
         # masks   : B x T
         dim = outputs.size(2)
@@ -633,7 +634,7 @@ class BaseNLPSupAgent(BaseAgent):
         if self.config.model.task_tam:
             side_info = batch['side_info'].to(self.device)
             side_info = side_info.repeat(batch_size * n_ways * n_shots, 1)
-            features = self.model(input_ids=tokens, attention_mask=masks, 
+            features = self.model(input_ids=tokens, attention_mask=masks,
                                   tam_embeds=side_info.unsqueeze(1))[0]
         else:
             features = self.model(input_ids=tokens, attention_mask=masks)[0]
@@ -644,7 +645,7 @@ class BaseNLPSupAgent(BaseAgent):
         probas = torch.sigmoid(logits)
         labels = labels.unsqueeze(1).float()
         loss = F.binary_cross_entropy(probas, labels)
-        
+
         with torch.no_grad():
             preds = torch.round(probas)
             correct = preds.eq(labels).sum().item()
@@ -656,7 +657,7 @@ class BaseNLPSupAgent(BaseAgent):
         tqdm_batch = tqdm(total=len(self.train_loader),
                           desc="[Epoch {}]".format(self.current_epoch))
         self.model.train()
-        loss_meter = utils.AverageMeter() 
+        loss_meter = utils.AverageMeter()
         acc_meter = utils.AverageMeter()
 
         for batch in self.train_loader:
