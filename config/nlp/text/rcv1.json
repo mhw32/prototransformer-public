@@ -1,5 +1,5 @@
 {
-    "exp_base": null,
+    "exp_base": "./config/nlp/text/exp_dir/<DATE>",
     "exp_name": "rcv1_5shot_proto_transformer",
     "agent": "NLPPrototypeNetAgent",
     "cuda": true,
@@ -8,7 +8,7 @@
     "data_loader_workers": 4,
     "dataset": {
         "name": "fs_rcv1",
-        "data_root": null,
+        "data_root": "./config/nlp/text/data_root/data/rcv1.json",
         "train": {
             "n_ways": 5,
             "n_shots": 5,

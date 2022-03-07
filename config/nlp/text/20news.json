@@ -2,7 +2,7 @@
     "exp_base": "./config/nlp/text/exp_dir/<DATE>",
     "exp_name": "20news_5shot_proto_transformer",
     "agent": "NLPPrototypeNetAgent",
-    "cuda": false,
+    "cuda": true,
     "gpu_device": 8,
     "seed": 42,
     "data_loader_workers": 4,
