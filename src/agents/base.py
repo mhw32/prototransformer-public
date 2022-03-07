@@ -116,6 +116,7 @@ class BaseAgent(object):
         :return:
         """
         for epoch in range(self.current_epoch, self.config.num_epochs):
+            print(f"Epoch: {epoch}")
             self.current_epoch = epoch
             self.train_one_epoch()
             if (self.config.validate and
