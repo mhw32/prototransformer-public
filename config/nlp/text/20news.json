@@ -41,6 +41,6 @@
     "validate": true,
     "validate_freq": 1,
     "copy_checkpoint_freq": 10,
-    "continue_exp_dir": null,
-    "continue_exp_name": null
+    "continue_exp_dir": "config/nlp/text/exp_dir/3_7_2022/experiments/20news_5shot_proto_transformer",
+    "continue_exp_name": "checkpoint_epoch90.pth.tar"
 }
