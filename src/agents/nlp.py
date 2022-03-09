@@ -189,10 +189,11 @@ class BaseNLPMetaAgent(BaseAgent):
         for epoch in range(self.current_epoch, self.config.optim.num_epochs):
             print(f"Epoch: {epoch}")
             self.current_epoch = epoch
-            self.train_one_epoch()
+            self.write_to_file(epoch)
+            self.write_to_file(self.train_one_epoch())
 
             if (self.config.validate and epoch % self.config.validate_freq == 0):
-                self.eval_test()
+                self.write_to_file(self.eval_test())
 
             self.save_checkpoint()
 
@@ -385,6 +386,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         self.train_acc.append(accuracies)
         self.temp.append(self.tau.item())
         print(f'Temperature: {self.tau.item()}')
+        return f'Meta-Train Tasks: {accuracies}'
 
     def eval_split(self, name, loader):
         tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
@@ -429,6 +431,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
             self.iter_with_no_improv = 0
         else:
             self.iter_with_no_improv += 1
+        return f'Meta-Val Tasks: {acc_means}'
 
 
 class NLPMatchingNetAgent(NLPPrototypeNetAgent):
