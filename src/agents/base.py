@@ -113,8 +113,8 @@ class BaseAgent(object):
             self.backup()
             raise e
 
-    def write_to_file(self, accuracy):
-        assert isinstance(accuracy, str)
+    def write_to_file(self, text):
+        assert text != None
         f = open(self.log_path, "a")
         f.write(accuracy + "\n")
         f.close()
