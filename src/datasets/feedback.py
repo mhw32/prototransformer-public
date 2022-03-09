@@ -640,39 +640,6 @@ class MetaDTSolutions(Dataset):
         lens = [self.token_lens[i] for i in indices]
         labs = np.array(self.labels_by_task[task])
 
-        # --- handle cloze tasks ---
-        if self.cloze_tasks_factor > 0 and task_type == self.cloze_task_type:
-            cloze_masks = self.cloze_masks_by_task[task]
-            if self.roberta_tokenize:
-                mask_index = self.tokenizer.mask_token_id
-            else:
-                # in each program replaced the token with mask
-                mask_index = self.w2i[MASK_TOKEN]
-            new_toks = []
-            for tok, lab in zip(toks, labs):
-                new_tok = copy.deepcopy(np.array(tok))
-                new_tok[new_tok == cloze_masks[lab]] = mask_index
-                new_tok = new_tok.tolist()
-                new_toks.append(new_tok)
-            toks = new_toks
-
-        # --- handle smlmt tasks ---
-        if self.smlmt_tasks_factor > 0 and task_type == self.smlmt_task_type:
-            smlmt_masks = self.smlmt_masks_by_task[task]
-            if self.roberta_tokenize:
-                mask_index = self.tokenizer.mask_token_id
-            else:
-                # in each program replaced the token with mask
-                mask_index = self.w2i[MASK_TOKEN]
-            new_toks = []
-            for tok, lab in zip(toks, labs):
-                new_tok = copy.deepcopy(np.array(tok))
-                new_tok[new_tok == smlmt_masks[lab]] = mask_index
-                new_tok = new_tok.tolist()
-                new_toks.append(new_tok)
-            toks = new_toks
-        # --- done ---
-
         num_classes = self.task_classes[task]
 
         rubric_embs = []
@@ -690,13 +657,7 @@ class MetaDTSolutions(Dataset):
 
                     # --- augmentations to make more training tasks ---
                     # don't shuffle entries if this is a cloze/execution/smlmt task.
-                    is_aux = task_type in [
-                        self.cloze_task_type,
-                        self.execution_task_type,
-                        self.smlmt_task_type,
-                    ]
-                    is_smlmt = task_type == self.smlmt_task_type
-                    if self.augment_by_rubric and not is_aux:
+                    if self.augment_by_rubric:
                         toks_s, new_s = shuffle_entries_augmentation(
                             indices[s],
                             self.equivalences,
@@ -704,17 +665,6 @@ class MetaDTSolutions(Dataset):
                             p=0.5,
                         )
                         lens_s = self.token_lens[new_s]
-                    # can't augment names if SMLMT task bc we might
-                    # be try to predict those. We can with cloze task
-                    # because we avoid names.
-                    if self.augment_by_names and not is_smlmt:
-                        toks_s = shuffle_names_augmentation(
-                            toks_s,
-                            self.vocab,
-                            self.func_tokens,
-                            self.var_tokens,
-                            p=0.5,
-                        )
                     # --- done ---
                     support_toks_cls.append(toks_s)
                     support_lens_cls.append(lens_s)
@@ -736,38 +686,8 @@ class MetaDTSolutions(Dataset):
             query_toks_cls = []
             query_lens_cls = []
             for s in query_ids:
-                if self.train and self.augment_by_names:
-                    toks_s = toks[s]
-                    lens_s = lens[s]
-
-                    # don't shuffle entries if this is a cloze/execution/smlmt task.
-                    is_aux = task_type in [
-                        self.cloze_task_type,
-                        self.execution_task_type,
-                        self.smlmt_task_type,
-                    ]
-                    is_smlmt = task_type == self.smlmt_task_type
-                    if self.augment_by_rubric and not is_aux:
-                        toks_s, new_s = shuffle_entries_augmentation(
-                            indices[s],
-                            self.equivalences,
-                            self.token_seqs,
-                            p=0.5,
-                        )
-                        lens_s = self.token_lens[new_s]
-                    if self.augment_by_names and not is_smlmt:
-                        toks_s = shuffle_names_augmentation(
-                            toks_s,
-                            self.vocab,
-                            self.func_tokens,
-                            self.var_tokens,
-                            p=0.5,
-                        )
-                    query_toks_cls.append(toks_s)
-                    query_lens_cls.append(len(toks_s))
-                else:  # do nothing
-                    query_toks_cls.append(toks[s])
-                    query_lens_cls.append(lens[s])
+                query_toks_cls.append(toks[s])
+                query_lens_cls.append(lens[s])
             query_toks.append(query_toks_cls)
             query_lens.append(query_lens_cls)
             query_labs.append([labs[s] for s in query_ids])
