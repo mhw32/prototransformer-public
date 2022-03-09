@@ -20,6 +20,836 @@ EXIT_SCOPE_TOKEN = '</scope>'
 NEWLINE_TOKEN = '<newline>'
 LEEWAY = 5
 
+class MetaDTSolutions(Dataset):
+    """
+    Dataset of student solutions to the DT dataset of physics problems
+    """
+    def __init__(
+            self,
+            n_shots,
+            n_queries,
+            data_root=None,                  # root of the dataset
+            answers_path=None,               # path to exam files from root
+            rubric_path=None,                # path to rubrics from root
+            cache_path=None,                 # where to cache RoBerta embeddings of rubric names if roberta_rubric = True
+            vocab=None,
+            augment_by_rubric=True,          # if True, randomly shuffle programs with identical rubrics in training
+            roberta_rubric=True,             # if True, map rubric text to RoBERTa encoding
+            roberta_prompt=True,             # if True, map question text to RoBERTa encoding
+            roberta_tokenize=False,          # if True, use RoBERTa tokenizer to tokenize
+            roberta_device='cpu',            # used for cache-ing rubric / prompt embeddings
+            roberta_config='microsoft/codebert-base',  # which pretrained RoBERTa to use for tokenizing
+            max_seq_len=1000,                # maximum # of tokens
+            min_occ=1,                       # minimum number of occurences to keep a token in vocab (only used if not RoBERTa)
+            conservative=True,               # if not conservative, keep more tasks (even unbalanced onces)
+            train=True,
+            train_frac=0.9,
+            hold_out_split=True,             # if True, we hold out questions
+            enforce_binary=False,            # if True, all tasks are binary prediction problems
+            fix_seed=True,
+            pad_to_max_num_class=False,      # if True, all tasks are padded to the maximum # of classes
+            min_task_answers=50,
+            simple_binary=False,             # If True, we make each rubric its own binary task instead of just the plurality class
+        ):
+        super(MetaDTSolutions, self).__init__()
+
+        # I THINK: making cache directories
+        if cache_path:
+            cache_path = os.path.join(data_root, cache_path)
+
+            if not os.path.isdir(cache_path):
+                os.makedirs(cache_path)
+
+        if not train and not roberta_tokenize:
+            assert vocab is not None
+
+        if roberta_tokenize:
+            # if we use roberta, turn off a bunch of other features
+            vocab = None
+
+        if enforce_binary:
+            pad_to_max_num_class = False
+
+        self.train = train
+        self.train_frac = train_frac
+        self.conservative = conservative
+        self.vocab = vocab
+        self.max_seq_len = max_seq_len
+        self.min_occ = min_occ
+        self.answers_path = os.path.join(data_root, answers_path)
+        self.rubric_path = os.path.join(data_root, rubric_path)
+        self.fix_seed = fix_seed
+        self.n_shots = n_shots
+        self.n_queries = n_queries
+        self.rs = np.random.RandomState(fix_seed)
+        self.hold_out_split = hold_out_split
+        self.enforce_binary = enforce_binary
+        self.roberta_tokenize = roberta_tokenize
+        self.pad_to_max_num_class = pad_to_max_num_class
+        self.roberta_device = roberta_device
+        self.min_task_answers = min_task_answers
+        self.simple_binary = simple_binary
+
+        print('loading exams...')
+        answers, indices, labels, tasks, \
+        questions, task_splits, task_classes, task_stats, \
+        rubrics, prompts, equivalences = self.load_exam_data()
+        print(len(answers))
+        print("answers", len(answers))
+        print("indices", len(indices))
+        print("labels", len(labels))
+        print("tasks", len(tasks))
+        print("questions", len(questions))
+        print("task_splits", len(task_splits))
+        print("task_classes", len(task_classes))
+        print("task_stats", len(task_stats))
+        print("rubrics", len(rubrics))
+        print("prompts", len(prompts))
+        print("equivalences", len(equivalences))
+
+        # NOTE: loading assignment data has been masked in public repo
+        answers, indices, labels, tasks, questions, task_splits, \
+        task_classes, task_stats, init_task_types, rubrics, prompts, equivalences = \
+            self.combine_data_sources(
+                [answers], [indices], [labels], [tasks],
+                [questions], [task_splits], [task_classes], [task_stats],
+                [rubrics], [prompts], [equivalences])
+        self.task_classes = task_classes
+        self.task_stats = task_stats
+
+        if hold_out_split:
+            tasks_in_split = np.array([k for k, v in task_splits.items() if v != train])
+            split_indices = np.in1d(tasks, tasks_in_split)
+            split_indices = np.where(split_indices)[0]
+        else:
+            # meta tasks train test split randomly based on task.
+            split_indices = self.train_test_split_by_question(
+                questions, train=train, train_frac=train_frac)
+
+        # indices : remaining indices in the current split
+        indices = [indices[i] for i in split_indices]
+        labels = [labels[i] for i in split_indices]
+        tasks = [tasks[i] for i in split_indices]
+        init_task_types = [init_task_types[t] for t in np.unique(tasks)]
+        rubrics = [rubrics[t] for t in np.unique(tasks)]
+        prompts = [prompts[t] for t in np.unique(tasks)]
+
+        # I THINK: generates roberta labels only once
+        if roberta_rubric:
+            print(cache_path)
+            rubric_bert_cache = self.roberta_embed_rubrics(
+                rubrics, cache_path, key='human_label')
+            prompt_bert_cache = self.roberta_embed_prompts(
+                prompts, cache_path)
+        else:
+            rubric_bert_cache = None
+            prompt_bert_cache = None
+
+        # remap indices to be contiguous and just grab relevant answers.
+        unique_indices = np.unique(indices).tolist()
+        index_mapping = dict(zip(unique_indices, range(len(unique_indices))))
+        indices = [index_mapping[index] for index in indices]
+        answers = [answers[i] for i in unique_indices]
+
+        # this is to find equivalent "answers" semantically
+        equivalences = remap_equivalences(equivalences, index_mapping)
+        equivalences = [equivalences[i] for i in range(len(unique_indices))]
+
+        # Use R
+        self.tokenizer = RobertaTokenizer.from_pretrained(roberta_config)
+        self.vocab_size = self.tokenizer.vocab_size
+        self.pad_index = self.tokenizer.pad_token_id
+
+        print('processing entries with vocab...')
+        token_seqs, token_lens = self.process_answers(
+            answers,
+            roberta_tokenize=roberta_tokenize)
+
+        print('constructing meta info...')
+        indices_by_task, labels_by_task = self.prepare_meta(indices, tasks, labels)
+
+        num_tasks = len(indices_by_task)
+
+        assert num_tasks == len(init_task_types)
+        task_types = init_task_types
+
+        print('done')
+        self.answers = answers
+        self.rubrics = rubrics
+        self.prompts = prompts
+        self.rubric_bert_cache = rubric_bert_cache
+        self.prompt_bert_cache = prompt_bert_cache
+        self.roberta_rubric = roberta_rubric
+        self.roberta_prompt = roberta_prompt
+        self.roberta_config = roberta_config
+        if train:
+            self.equivalences = equivalences
+        else:
+            # we should not be able to use this is validation
+            self.equivalences = None
+        self.token_seqs = token_seqs
+        self.token_lens = token_lens
+        self.max_index = max(indices)
+        self.indices_by_task = indices_by_task
+        self.labels_by_task = labels_by_task
+        self.task_ids = [int(x) for x in sorted(list(indices_by_task.keys()))]
+        self.augment_by_rubric = augment_by_rubric
+        self.task_types = task_types
+        self.num_task_types = len(set(task_types))
+        self.task_classes = task_classes
+        self.max_num_classes = max(self.task_classes.values())
+
+    def load_exam_data(self):
+        df = pd.read_csv(self.answers_path)
+        key_df = pd.read_csv(self.rubric_path)
+
+        key_rubrics = list(key_df['rubric'])
+        key_rubrics = [json.loads(r) for r in key_rubrics]
+        key_rubrics = dict(zip(list(key_df['id']), key_rubrics))
+
+        answers = np.asarray(df['answer'])
+        rubrics = np.asarray(df['gradeData'])
+        prompts = np.asarray(df['questionText'])
+
+        # id isn't work bc its unique
+        tasks = np.asarray(df["questionId"])
+        # to delete
+        ta = tasks[0]
+
+        ids = np.asarray(df['id']) # TODO: Not sure what this is
+
+        if self.hold_out_split:
+            # reserve some questions for test split
+            questions = list(set(tasks))
+            num_test_questions = max(int((1 - self.train_frac) * len(questions)), 1)
+            self.rs.shuffle(questions)
+            questions = list(questions)
+            test_questions = questions[-num_test_questions:]
+            is_test = np.in1d(tasks, test_questions)
+
+        print('parsing rubrics...')
+        print(f"First {10} rubrics are: {rubrics[:10]}")
+        # replace rubrics with string format with key_rubrics
+        # I THINK: rubrics is originally a list of JSON strings, which each corrspond for a certain question to
+        # a dictionary of rubric_item_id : 0/1? And then we replace rubric_item_id with a JSON string
+        # of the dictionary for that rubric (containing more info about it)
+        new_rubrics = []
+        for task, rubric, task_id in zip(tasks, rubrics, ids):
+            rubric = json.loads(rubric)
+
+            if task in key_rubrics:
+                new_rubric = {}
+                rubric_map = key_rubrics[task]
+                for key in rubric:
+                    if key in rubric_map:
+                        new_key = {
+                            'name': int(task),
+                            'id': int(task_id),
+                            'human_label': rubric_map[key],
+                            'abbrev_label': key,
+                        }
+                        new_key = json.dumps(new_key)
+                        new_rubric[new_key] = rubric[key]
+                    else:
+                        new_key = {
+                            'name': int(task),
+                            'id': int(task_id),
+                            'human_label': key,
+                            'abbrev_label': key,
+                        }
+                        new_key = json.dumps(new_key)
+                        new_rubric[new_key] = rubric[key]
+                new_rubrics.append(new_rubric)
+            else:
+                new_rubric = {}
+                for key in rubric:
+                    new_key = {
+                        'name': int(task),
+                        'id': int(task_id),
+                        'human_label': key,
+                        'abbrev_label': key,
+                    }
+                    new_key = json.dumps(new_key)
+                    new_rubric[new_key] = rubric[key]
+                new_rubrics.append(new_rubric)
+
+        # replace rubric with new_rubric
+        rubrics = np.asarray(new_rubrics)
+
+        # build equivalence maps from index to a set of indices
+        # that are answers with the exact same output
+        equivalence_maps = build_many_equivalences(tasks, rubrics) # TODO: Not sure why we do this
+
+        # map tasks to integers
+        unique_tasks = sorted(set(tasks))
+        task_mapping = dict(zip(unique_tasks, range(len(unique_tasks))))
+        tasks = np.array([task_mapping[t] for t in tasks])
+
+        # we use indices to track answers
+        # v0: we worked directly on program strings but this quickly
+        #     got expensive as we duplicate answers excessively.
+        # v1: we work on indices and look up answers. Main advantage
+        #     is that we only have to compile answers once.
+        indices = np.arange(len(answers))
+
+        print('building tasks...')
+        print(f"confirming that tasks still has length {len(tasks)}")
+        # a task is now defined by several labels, we can duplicate each to new tasks
+        indices, labels, tasks, questions, task_splits, \
+        task_classes, task_stats, rubric_maps, prompt_maps = \
+            construct_tasks_by_rubric(
+                indices, rubrics, prompts, tasks, is_test)
+
+        # We remove any tasks where there are fewer than "self.n_shots + self.n_queries" examples
+        print(f"after constructing by rubric")
+        self.print_debug(tasks, labels, indices)
+        if self.conservative:
+            print('removing trivial classes...')
+            indices, labels, tasks, questions, task_splits, \
+            task_classes, task_stats, rubric_maps, prompt_maps = \
+                remove_small_classes(
+                    indices, labels, tasks, questions, task_splits, task_classes,
+                    task_stats, rubric_maps, prompt_maps,
+                    min_freq=self.n_shots + self.n_queries) # TODO: Not 100% sure why this is shots + queries...it seems like we only need >=max(shots, queries)
+                # since this will only be one or the other
+
+        print(f"after removing small tasks is")
+        self.print_debug(tasks, labels, indices)
+        if self.enforce_binary:
+            print('collapsing tasks to binary...')
+            if self.simple_binary:
+                indices, labels, tasks, questions, task_splits, \
+                task_classes, task_stats, rubric_maps, prompt_maps = \
+                    make_binary_tasks(
+                        indices, labels, tasks, questions, task_splits, task_classes,
+                        task_stats, rubric_maps, prompt_maps)
+            else: # I think we want to always take this path, but left the option open
+                indices, labels, tasks, questions, task_splits, \
+                task_classes, task_stats, rubric_maps, prompt_maps = \
+                    make_binary_tasks_liberally(
+                        indices, labels, tasks, questions, task_splits, task_classes,
+                        task_stats, rubric_maps, prompt_maps)
+
+        print(f"right before returning")
+        self.print_debug(tasks, labels, indices)
+        return answers, indices, labels, tasks, questions, task_splits, \
+               task_classes, task_stats, rubric_maps, prompt_maps, equivalence_maps
+
+    # TODO: delete
+    def print_debug(self, tasks, labels, indices, length=10):
+        print(f"There are {len(indices)} indices")
+        print(f"There are {len(tasks)} tasks")
+        labels = np.array(labels)
+        tasks = np.array(tasks)
+        task_labels = labels[tasks == tasks[0]]
+        print(f"task labels are: {task_labels}")
+
+    def build_attention_masks(self, lengths):
+        batch_size = len(lengths)
+        mask = np.zeros((batch_size, self.max_seq_len))
+        for i in range(batch_size):
+            mask[i, :lengths[i]] = 1
+        return torch.from_numpy(mask).long()
+
+    def process_answers(
+            self,
+            answers,
+            roberta_tokenize,
+        ):
+        """
+        Use Roberta to tokenize
+        """
+        token_seqs, token_lengths = [], []
+
+        for i in tqdm(range(len(answers))):
+            answer = answers[i]
+
+            assert self.max_seq_len == 512
+            tokenizer_outputs = self.tokenizer(
+                answer,
+                truncation=True,
+                padding='max_length',
+                max_length=self.max_seq_len,
+                return_length=True,
+                pad_to_max_length=True)
+
+            tokens = tokenizer_outputs['input_ids']
+            token_length = tokenizer_outputs['length']
+
+            token_seqs.append(tokens)
+            token_lengths.append(token_length)
+
+        return token_seqs, token_lengths
+
+    def combine_data_sources(
+            self,
+            programs_list,
+            indices_list,
+            labels_list,
+            tasks_list,
+            questions_list,
+            task_splits_list,
+            task_classes_list,
+            task_stats_list,
+            rubrics_list,
+            prompts_list,
+            equivalences_list,
+        ):
+        programs = []
+        indices = []
+        labels = []
+        tasks = []
+        questions = []
+        task_splits = {}
+        task_classes = {}
+        task_stats = []
+        task_types = []
+        rubrics = {}
+        prompts = {}
+        equivalences = {}
+
+        max_index = 0
+        max_task = 0
+        max_question = 0
+        n = len(programs_list)
+        for i in range(n):
+            programs.extend(programs_list[i])
+            indices_i = indices_list[i]
+            indices_i = [d + max_index for d in indices_i]
+            indices.extend(indices_i)
+            labels.extend(labels_list[i])
+            tasks_i = tasks_list[i]
+            tasks_i = [t + max_task for t in tasks_i]
+            tasks.extend(tasks_i)
+            questions_i = questions_list[i]
+            questions_i = [q + max_question for q in questions_i]
+            questions.extend(questions_i)
+            for t, rubs in rubrics_list[i].items():
+                assert t + max_task not in rubrics
+                rubrics[t + max_task] = rubs
+            for t, pmts in prompts_list[i].items():
+                assert t + max_task not in prompts
+                prompts[t + max_task] = pmts
+            for t, splits in task_splits_list[i].items():
+                assert t + max_task not in task_splits
+                task_splits[t + max_task] = splits
+            for t, classes in task_classes_list[i].items():
+                assert t + max_task not in task_classes
+                task_classes[t + max_task] = classes
+            task_stats.extend(task_stats_list[i])
+            task_types.extend([i for _ in range(len(task_stats_list[i]))])
+            for ix, eqs in equivalences_list[i].items():
+                assert ix + max_index not in equivalences
+                equivalences[ix + max_index] = eqs
+            # increment max tasks
+            max_task = int(max(tasks_i) + 1)
+            max_index = int(max(indices_i) + 1)
+            max_question = int(max(questions_i) + 1)
+
+        return programs, indices, labels, tasks, questions, task_splits, \
+               task_classes, task_stats, task_types, rubrics, prompts, equivalences
+
+    def roberta_embed_rubrics(self, rubric_list, cache_path, key='human_label'):
+        """
+        rubric_list maps a task to a rubric name and list of value names
+        """
+        print('Computing rubric BERT embeddings...')
+
+        edited_cache = False
+        cache_file = os.path.join(
+            cache_path,
+            f'sentence_bert_rubric_cache_{self.n_shots}shots_{self.n_queries}queries.pth.tar',
+        )
+        if os.path.exists(cache_file):
+            roberta_cache = torch.load(cache_file)
+        else:
+            roberta_cache = {}
+
+        if 'None' not in roberta_cache:
+            roberta_cache['None'] = torch.zeros(768)
+
+        texts = []
+        for task in range(len(rubric_list)):
+            rubric = rubric_list[task]
+            if isinstance(rubric, list):
+                r = rubric[0]  # they are all the same
+                r = json.loads(r)[key]
+                texts.append(r)
+            elif isinstance(rubric, str):
+                r = json.loads(rubric)[key]
+                texts.append(r)
+            else:
+                raise Exception('Unsupported rubric type.')
+        texts = list(set(texts))
+
+        texts_to_run = []  # these are the things we need to run
+
+        for text in texts:
+            text = str(text)
+            if text in roberta_cache:
+                embs = roberta_cache[text]
+            elif text == 'None':  # replace this with just zeros
+                embs = torch.zeros(768)
+                roberta_cache[text] = embs
+                edited_cache = True
+            else:
+                texts_to_run.append(text)
+                edited_cache = True
+
+        if len(texts_to_run) > 0:
+            assert edited_cache
+            bert = SentenceBERT(
+                version='bert-base-nli-stsb-mean-tokens',
+                device=self.roberta_device,
+            )
+            embs = bert(texts_to_run, batch_size=32, show_progress_bar=True)
+            embs = embs.detach().cpu()
+
+            for i in range(len(texts_to_run)):
+                roberta_cache[texts_to_run[i]] = embs[i]
+
+        if edited_cache:
+            print('Made edits to cache... saving...')
+            torch.save(roberta_cache, cache_file)
+
+        return roberta_cache
+
+    def roberta_embed_prompts(self, prompt_list, cache_path):
+        print('Computing prompt BERT embeddings...')
+
+        edited_cache = False
+        cache_file = os.path.join(
+            cache_path,
+            f'sentence_bert_prompt_cache_{self.n_shots}shots_{self.n_queries}queries.pth.tar',
+        )
+        if os.path.exists(cache_file):
+            roberta_cache = torch.load(cache_file)
+        else:
+            roberta_cache = {}
+
+        if 'None' not in roberta_cache:
+            roberta_cache['None'] = torch.zeros(768)
+
+        texts_to_run = []  # these are the things we need to run
+        hashs_to_run = []
+
+        for prompt in prompt_list:
+            prompt = str(prompt)
+            prompt_hash = hashlib.sha256(prompt.encode('utf-8')).hexdigest()
+            if prompt_hash in roberta_cache:
+                embs = roberta_cache[prompt_hash]
+            elif prompt == 'None':
+                embs = torch.zeros(768)
+                roberta_cache[prompt_hash] = embs
+                edited_cache = True
+            else:
+                texts_to_run.append(prompt)
+                hashs_to_run.append(prompt_hash)
+                edited_cache = True
+
+        if len(texts_to_run) > 0:
+            assert edited_cache
+            assert len(texts_to_run) == len(hashs_to_run)
+            bert = SentenceBERT(
+                version='bert-base-nli-stsb-mean-tokens',
+                device=self.roberta_device,
+            )
+            embs = bert(texts_to_run, batch_size=32, show_progress_bar=True)
+            embs = embs.detach().cpu()
+
+            for i in range(len(texts_to_run)):
+                roberta_cache[hashs_to_run[i]] = embs[i]
+
+        if edited_cache:
+            print('Made edits to cache... saving...')
+            torch.save(roberta_cache, cache_file)
+
+        return roberta_cache
+
+    def train_test_split_by_question(self, questions, train=True, train_frac=0.9):
+        """
+        Split tasks into train and test splits but do so preserving that all the
+        tasks from one question are put together. Otherwise, it is cheating a bit
+        since the same programs where seen in training.
+        """
+        unique_questions = np.sort(np.unique(questions))
+        num_questions = len(unique_questions)
+
+        num_train = int(num_questions * train_frac)
+        # important to fix the random seed here we get same split every call
+        train_questions = self.rs.choice(unique_questions, num_train, replace=False)
+        train_questions = np.sort(train_questions)
+
+        if train:
+            split_indices = np.in1d(questions, train_questions)
+        else:
+            split_indices = ~np.in1d(questions, train_questions)
+
+        split_indices = np.where(split_indices)[0]
+        return split_indices
+
+    def prepare_meta(self, indices, tasks, labels):
+        def create_item():
+            return []
+
+        indices_by_task = defaultdict(create_item)
+        labels_by_task  = defaultdict(create_item)
+
+        for i in range(len(indices)):
+            indices_by_task[tasks[i]].append(indices[i])
+            labels_by_task[tasks[i]].append(labels[i])
+
+        return indices_by_task, labels_by_task
+
+    def __len__(self):
+        return len(self.task_ids)
+
+    def __getitem__(self, index):
+        task = int(self.task_ids[index])
+        task_type = self.task_types[index]
+
+        # --- handle grabbing the rubric embedding ---
+        rubric_name = self.rubrics[index]
+        if isinstance(rubric_name, list):
+            rubric_name = list(set([json.loads(x)['human_label'] for x in rubric_name]))[0]
+        elif isinstance(rubric_name, str):
+            rubric_name = json.loads(rubric_name)['human_label']
+        else:
+            raise Exception('type not supported.')
+
+        prompt_text = self.prompts[index]
+
+        if self.roberta_rubric:
+            rubric_bert_name = self.rubric_bert_cache[rubric_name]
+        else:
+            rubric_bert_name = torch.zeros(768)
+
+        if self.roberta_prompt:
+            prompt_hash = hashlib.sha256(prompt_text.encode('utf-8')).hexdigest()
+            prompt_bert_name = self.prompt_bert_cache[prompt_hash]
+        else:
+            prompt_bert_name = torch.zeros(768)
+
+        # --- done ---
+
+        support_toks, support_lens, support_labs = [], [], []
+        query_toks, query_lens, query_labs = [], [], []
+
+        indices = self.indices_by_task[task]
+        toks = [self.token_seqs[i] for i in indices]
+        lens = [self.token_lens[i] for i in indices]
+        labs = np.array(self.labels_by_task[task])
+
+        # --- handle cloze tasks ---
+        if self.cloze_tasks_factor > 0 and task_type == self.cloze_task_type:
+            cloze_masks = self.cloze_masks_by_task[task]
+            if self.roberta_tokenize:
+                mask_index = self.tokenizer.mask_token_id
+            else:
+                # in each program replaced the token with mask
+                mask_index = self.w2i[MASK_TOKEN]
+            new_toks = []
+            for tok, lab in zip(toks, labs):
+                new_tok = copy.deepcopy(np.array(tok))
+                new_tok[new_tok == cloze_masks[lab]] = mask_index
+                new_tok = new_tok.tolist()
+                new_toks.append(new_tok)
+            toks = new_toks
+
+        # --- handle smlmt tasks ---
+        if self.smlmt_tasks_factor > 0 and task_type == self.smlmt_task_type:
+            smlmt_masks = self.smlmt_masks_by_task[task]
+            if self.roberta_tokenize:
+                mask_index = self.tokenizer.mask_token_id
+            else:
+                # in each program replaced the token with mask
+                mask_index = self.w2i[MASK_TOKEN]
+            new_toks = []
+            for tok, lab in zip(toks, labs):
+                new_tok = copy.deepcopy(np.array(tok))
+                new_tok[new_tok == smlmt_masks[lab]] = mask_index
+                new_tok = new_tok.tolist()
+                new_toks.append(new_tok)
+            toks = new_toks
+        # --- done ---
+
+        num_classes = self.task_classes[task]
+
+        rubric_embs = []
+        prompt_embs = []
+        for cls in range(num_classes):
+            valid_indices = np.where(labs == cls)[0]
+            sample_with_replace = True if len(valid_indices) < self.n_shots else False
+            support_ids_sampled = self.rs.choice(valid_indices, self.n_shots, sample_with_replace)
+            support_toks_cls = []
+            support_lens_cls = []
+            for s in support_ids_sampled:
+                if self.train:
+                    toks_s = toks[s]
+                    lens_s = lens[s]
+
+                    # --- augmentations to make more training tasks ---
+                    # don't shuffle entries if this is a cloze/execution/smlmt task.
+                    is_aux = task_type in [
+                        self.cloze_task_type,
+                        self.execution_task_type,
+                        self.smlmt_task_type,
+                    ]
+                    is_smlmt = task_type == self.smlmt_task_type
+                    if self.augment_by_rubric and not is_aux:
+                        toks_s, new_s = shuffle_entries_augmentation(
+                            indices[s],
+                            self.equivalences,
+                            self.token_seqs,
+                            p=0.5,
+                        )
+                        lens_s = self.token_lens[new_s]
+                    # can't augment names if SMLMT task bc we might
+                    # be try to predict those. We can with cloze task
+                    # because we avoid names.
+                    if self.augment_by_names and not is_smlmt:
+                        toks_s = shuffle_names_augmentation(
+                            toks_s,
+                            self.vocab,
+                            self.func_tokens,
+                            self.var_tokens,
+                            p=0.5,
+                        )
+                    # --- done ---
+                    support_toks_cls.append(toks_s)
+                    support_lens_cls.append(lens_s)
+                else:
+                    # do nothing. we used to replace unknown tokens with random ones
+                    # but i think thats a bad idea
+                    support_toks_cls.append(toks[s])
+                    support_lens_cls.append(lens[s])
+            support_toks.append(support_toks_cls)
+            support_lens.append(support_lens_cls)
+            support_labs.append([labs[s] for s in support_ids_sampled])
+
+            # do the same for query set
+            query_ids = np.setxor1d(valid_indices, support_ids_sampled)
+            if len(query_ids) == 0:
+                query_ids = valid_indices  # no choice but to resample
+            query_replace = False if len(query_ids) > self.n_queries else True
+            query_ids = self.rs.choice(query_ids, self.n_queries, query_replace)
+            query_toks_cls = []
+            query_lens_cls = []
+            for s in query_ids:
+                if self.train and self.augment_by_names:
+                    toks_s = toks[s]
+                    lens_s = lens[s]
+
+                    # don't shuffle entries if this is a cloze/execution/smlmt task.
+                    is_aux = task_type in [
+                        self.cloze_task_type,
+                        self.execution_task_type,
+                        self.smlmt_task_type,
+                    ]
+                    is_smlmt = task_type == self.smlmt_task_type
+                    if self.augment_by_rubric and not is_aux:
+                        toks_s, new_s = shuffle_entries_augmentation(
+                            indices[s],
+                            self.equivalences,
+                            self.token_seqs,
+                            p=0.5,
+                        )
+                        lens_s = self.token_lens[new_s]
+                    if self.augment_by_names and not is_smlmt:
+                        toks_s = shuffle_names_augmentation(
+                            toks_s,
+                            self.vocab,
+                            self.func_tokens,
+                            self.var_tokens,
+                            p=0.5,
+                        )
+                    query_toks_cls.append(toks_s)
+                    query_lens_cls.append(len(toks_s))
+                else:  # do nothing
+                    query_toks_cls.append(toks[s])
+                    query_lens_cls.append(lens[s])
+            query_toks.append(query_toks_cls)
+            query_lens.append(query_lens_cls)
+            query_labs.append([labs[s] for s in query_ids])
+
+            rubric_embs.append(rubric_bert_name)
+            prompt_embs.append(prompt_bert_name)
+
+        support_toks = np.array(support_toks)
+        support_lens = np.array(support_lens)
+        support_labs = np.array(support_labs)
+
+        query_toks = np.array(query_toks)
+        query_lens = np.array(query_lens)
+        query_labs = np.array(query_labs)
+
+        rubric_embs = torch.stack(rubric_embs)
+        prompt_embs = torch.stack(prompt_embs)
+
+        if self.pad_to_max_num_class:
+            # we want everything to be of the same number of classes
+            # so that can organize them as a minibatch. Each sentence
+            # is going to be ['<s>', '</s>'] (length 2).
+            num_class = support_toks.shape[0]
+            if num_class < self.max_num_classes:
+                support_fill_toks = np.zeros((self.max_num_classes - num_class,
+                                              support_toks.shape[1],
+                                              support_toks.shape[2]))
+                support_fill_toks[:, :, 0] = self.w2i[SOS_TOKEN]
+                support_fill_toks[:, :, 1] = self.w2i[EOS_TOKEN]
+                support_fill_toks[:, :, 2:] = self.w2i[PAD_TOKEN]
+                support_fill_lens = np.zeros((self.max_num_classes - num_class,
+                                              support_lens.shape[1])) + 2
+                # filler label is always 0.
+                support_fill_labs = np.zeros((self.max_num_classes - num_class,
+                                              support_labs.shape[1]))
+
+                query_fill_toks = np.zeros((self.max_num_classes - num_class,
+                                            query_toks.shape[1],
+                                            query_toks.shape[2]))
+                query_fill_toks[:, :, 0] = self.w2i[SOS_TOKEN]
+                query_fill_toks[:, :, 1] = self.w2i[EOS_TOKEN]
+                query_fill_toks[:, :, 2:] = self.w2i[PAD_TOKEN]
+                query_fill_lens = np.zeros((self.max_num_classes - num_class,
+                                            query_lens.shape[1])) + 2
+                query_fill_labs = np.zeros((self.max_num_classes - num_class,
+                                            query_labs.shape[1]))
+
+                support_toks = np.concatenate([support_toks, support_fill_toks], axis=0)
+                support_lens = np.concatenate([support_lens, support_fill_lens], axis=0)
+                support_labs = np.concatenate([support_labs, support_fill_labs], axis=0)
+
+                query_toks = np.concatenate([query_toks, query_fill_toks], axis=0)
+                query_lens = np.concatenate([query_lens, query_fill_lens], axis=0)
+                query_labs = np.concatenate([query_labs, query_fill_labs], axis=0)
+
+        support_toks = torch.from_numpy(support_toks).long()
+        support_lens = torch.from_numpy(support_lens).long()
+        support_labs = torch.from_numpy(support_labs).long()
+        support_masks = self.build_attention_masks(support_lens.view(-1))
+        support_masks = support_masks.view(num_classes, self.n_shots, -1)
+
+        query_toks = torch.from_numpy(query_toks).long()
+        query_lens = torch.from_numpy(query_lens).long()
+        query_labs = torch.from_numpy(query_labs).long()
+        query_masks = self.build_attention_masks(query_lens.view(-1))
+        query_masks = query_masks.view(num_classes, self.n_queries, -1)
+
+        output_dict = dict(
+            task=task,
+            support_toks=support_toks,
+            support_lens=support_lens,
+            support_masks=support_masks,
+            support_labs=support_labs,
+            query_toks=query_toks,
+            query_lens=query_lens,
+            query_masks=query_masks,
+            query_labs=query_labs,
+            task_type=task_type,
+            rubric_embs=rubric_embs,
+            prompt_embs=prompt_embs,
+        )
+        return output_dict
 
 class MetaExamSolutions(Dataset):
     """
@@ -71,7 +901,7 @@ class MetaExamSolutions(Dataset):
         if not train:
             augment_by_names = False
 
-        if roberta_tokenize: 
+        if roberta_tokenize:
             # if we use roberta, turn off a bunch of other features
             obfuscate_names = False
             augment_by_names = False
@@ -120,7 +950,7 @@ class MetaExamSolutions(Dataset):
                 [rubrics], [prompts], [equivalences])
         self.task_classes = task_classes
         self.task_stats = task_stats
-  
+
         if hold_out_split:
             tasks_in_split = np.array([k for k, v in task_splits.items() if v != train])
             split_indices = np.in1d(tasks, tasks_in_split)
@@ -129,7 +959,7 @@ class MetaExamSolutions(Dataset):
             # meta tasks train test split randomly based on task.
             split_indices = self.train_test_split_by_question(
                 questions, train=train, train_frac=train_frac)
-        
+
         # indices : remaining indices in the current split
         indices = [indices[i] for i in split_indices]
         labels = [labels[i] for i in split_indices]
@@ -170,7 +1000,7 @@ class MetaExamSolutions(Dataset):
                 print('creating vocab...')
                 self.vocab = self.create_vocab(
                     programs,
-                    traces, 
+                    traces,
                     minifier_maps,
                     min_occ=min_occ,
                     max_num_var=max_num_var,
@@ -228,8 +1058,8 @@ class MetaExamSolutions(Dataset):
             Auxiliary Task #1:
 
             Cloze tasks mask out 2 different tokens across a set of programs
-            and ask the model to predict which of the two tokens belongs in 
-            each spot. We ignore variable and function names. 
+            and ask the model to predict which of the two tokens belongs in
+            each spot. We ignore variable and function names.
             """
             cloze_mappings = self.init_cloze_task(token_seqs)
             print('constructing cloze tasks...')
@@ -250,7 +1080,7 @@ class MetaExamSolutions(Dataset):
                 rubrics.append(cloze_rubrics_by_task[t])
                 prompts.append('None')
                 task_classes[max_task_id + t] = 2
-            self.cloze_task_type = max(init_task_types) + 1 
+            self.cloze_task_type = max(init_task_types) + 1
             self.cloze_masks_by_task = cloze_masks_by_task
 
         if num_execution_tasks > 0:
@@ -258,7 +1088,7 @@ class MetaExamSolutions(Dataset):
             Auxiliary Task #2:
 
             Execution tasks ask us to predict the output of running the program.
-            We design a task by randomly choosing two different possible outputs. 
+            We design a task by randomly choosing two different possible outputs.
             These include error messages and outputs.
             """
             # update the number of tasks
@@ -287,8 +1117,8 @@ class MetaExamSolutions(Dataset):
             Auxiliary Task #3:
 
             Cloze tasks mask out 2 different tokens across a set of programs
-            and ask the model to predict which of the two tokens belongs in 
-            each spot. We treat all tokens equally (don't do anything custom 
+            and ask the model to predict which of the two tokens belongs in
+            each spot. We treat all tokens equally (don't do anything custom
             to programming code: https://arxiv.org/pdf/2009.08445.pdf).
             """
             smlmt_mappings = self.init_smlmt_task(token_seqs)
@@ -310,7 +1140,7 @@ class MetaExamSolutions(Dataset):
                 rubrics.append(smlmt_rubrics_by_task[t])
                 prompts.append('None')
                 task_classes[max_task_id + t] = 2
-            self.smlmt_task_type = max(init_task_types) + 1 
+            self.smlmt_task_type = max(init_task_types) + 1
             self.smlmt_masks_by_task = smlmt_masks_by_task
 
         print('done')
@@ -352,7 +1182,7 @@ class MetaExamSolutions(Dataset):
         question_df = pd.read_csv(self.exam_prompt)
 
         key_rubrics = list(key_df['rubric'])
-        key_rubrics = [json.loads(r) for r in key_rubrics] 
+        key_rubrics = [json.loads(r) for r in key_rubrics]
         key_rubrics = dict(zip(list(key_df['id']), key_rubrics))
 
         # merge with questions dataframe
@@ -390,12 +1220,12 @@ class MetaExamSolutions(Dataset):
         # remove missing tasks
         indices = ~np.array([isinstance(t, float) for t in tasks])
         programs, rubrics, prompts, scores, tasks, ids, is_test = (
-            programs[indices], rubrics[indices], prompts[indices], scores[indices], 
+            programs[indices], rubrics[indices], prompts[indices], scores[indices],
             tasks[indices], ids[indices], is_test[indices])
         # remove missing rubrics
         indices = ~np.array([isinstance(r, float) for r in rubrics])
         programs, rubrics, prompts, scores, tasks, ids, is_test = (
-            programs[indices], rubrics[indices], prompts[indices], scores[indices], 
+            programs[indices], rubrics[indices], prompts[indices], scores[indices],
             tasks[indices], ids[indices], is_test[indices])
 
         # compile programs and remove those with bad compilations
@@ -411,8 +1241,8 @@ class MetaExamSolutions(Dataset):
         # subset the other objects with indices
         indices = np.array(indices)
         programs, rubrics, prompts, scores, tasks, ids, is_test = (
-            programs[indices], rubrics[indices], prompts[indices], scores[indices], 
-            tasks[indices], ids[indices], is_test[indices], 
+            programs[indices], rubrics[indices], prompts[indices], scores[indices],
+            tasks[indices], ids[indices], is_test[indices],
         )
 
         print('parsing rubrics...')
@@ -427,18 +1257,18 @@ class MetaExamSolutions(Dataset):
                 for key in rubric:
                     if key in rubric_map:
                         new_key = {
-                            'name': task, 
-                            'id': task_id, 
-                            'human_label': rubric_map[key], 
+                            'name': task,
+                            'id': task_id,
+                            'human_label': rubric_map[key],
                             'abbrev_label': key,
                         }
                         new_key = json.dumps(new_key)
                         new_rubric[new_key] = rubric[key]
                     else:
                         new_key = {
-                            'name': task, 
-                            'id': task_id, 
-                            'human_label': key, 
+                            'name': task,
+                            'id': task_id,
+                            'human_label': key,
                             'abbrev_label': key,
                         }
                         new_key = json.dumps(new_key)
@@ -458,13 +1288,13 @@ class MetaExamSolutions(Dataset):
                 new_rubrics.append(new_rubric)
 
         # replace rubric with new_rubric
-        rubrics = np.asarray(new_rubrics) 
+        rubrics = np.asarray(new_rubrics)
 
         # remove tasks where everyone got the same score
         # remove tasks with less than 50 responses. These tasks
         # are probably not useful for learning
 
-        # if not conservative, don't remove anything and 
+        # if not conservative, don't remove anything and
         # keep trivial tasks with one label.
         if self.conservative:
             bad_tasks = []
@@ -476,9 +1306,9 @@ class MetaExamSolutions(Dataset):
             bad_tasks = np.array(bad_tasks)
             indices = ~np.in1d(tasks, bad_tasks)
             programs, traces, rubrics, prompts, scores, tasks, is_test, = (
-                programs[indices], traces[indices], rubrics[indices], 
-                prompts[indices], scores[indices], tasks[indices], 
-                is_test[indices], 
+                programs[indices], traces[indices], rubrics[indices],
+                prompts[indices], scores[indices], tasks[indices],
+                is_test[indices],
             )
 
         # build equivalence maps from index to a set of indices
@@ -491,8 +1321,8 @@ class MetaExamSolutions(Dataset):
         tasks = np.array([task_mapping[t] for t in tasks])
 
         # we use indices to track programs
-        # v0: we worked directly on program strings but this quickly 
-        #     got expensive as we duplicate programs excessively. 
+        # v0: we worked directly on program strings but this quickly
+        #     got expensive as we duplicate programs excessively.
         # v1: we work on indices and look up programs. Main advantage
         #     is that we only have to compile programs once.
         indices = np.arange(len(programs))
@@ -509,8 +1339,8 @@ class MetaExamSolutions(Dataset):
             indices, labels, tasks, questions, task_splits, \
             task_classes, task_stats, rubric_maps, prompt_maps = \
                 remove_small_classes(
-                    indices, labels, tasks, questions, task_splits, task_classes, 
-                    task_stats, rubric_maps, prompt_maps, 
+                    indices, labels, tasks, questions, task_splits, task_classes,
+                    task_stats, rubric_maps, prompt_maps,
                     min_freq=self.n_shots + self.n_queries)
 
         if self.enforce_binary:
@@ -519,7 +1349,7 @@ class MetaExamSolutions(Dataset):
                 indices, labels, tasks, questions, task_splits, \
                 task_classes, task_stats, rubric_maps, prompt_maps = \
                     make_binary_tasks(
-                        indices, labels, tasks, questions, task_splits, task_classes, 
+                        indices, labels, tasks, questions, task_splits, task_classes,
                         task_stats, rubric_maps, prompt_maps)
             else:
                 indices, labels, tasks, questions, task_splits, \
@@ -532,10 +1362,10 @@ class MetaExamSolutions(Dataset):
                task_classes, task_stats, rubric_maps, prompt_maps, equivalence_maps
 
     def create_vocab(
-            self, 
-            programs, 
-            traces, 
-            minifier_maps, 
+            self,
+            programs,
+            traces,
+            minifier_maps,
             min_occ=1,
             max_num_var=100,
             max_num_func=10,
@@ -560,9 +1390,9 @@ class MetaExamSolutions(Dataset):
         for program, trace, minifier_map in zip(programs, traces, minifier_maps):
             program = clean_program(program)
             tokens = self.tokenize_program(
-                program, 
-                trace, 
-                minifier_map=minifier_map, 
+                program,
+                trace,
+                minifier_map=minifier_map,
                 obfuscate_names=obfuscate_names,
             )
             w2c.update(tokens)
@@ -609,7 +1439,7 @@ class MetaExamSolutions(Dataset):
                     token = minifier_map[token]
                 tokens.append(token)
         return tokens
-    
+
     def build_attention_masks(self, lengths):
         batch_size = len(lengths)
         mask = np.zeros((batch_size, self.max_seq_len))
@@ -635,8 +1465,8 @@ class MetaExamSolutions(Dataset):
                 assert self.max_seq_len == 512
                 tokenizer_outputs = self.tokenizer(
                     program,
-                    truncation=True, 
-                    padding='max_length', 
+                    truncation=True,
+                    padding='max_length',
                     max_length=self.max_seq_len,
                     return_length=True,
                     pad_to_max_length=True)
@@ -656,7 +1486,7 @@ class MetaExamSolutions(Dataset):
                 tokens.extend([PAD_TOKEN] * (self.max_seq_len - token_length))
 
                 new_tokens = []
-                for token in tokens: 
+                for token in tokens:
                     if token in self.w2i:
                         new_token = self.w2i[token]
                     else:
@@ -670,16 +1500,16 @@ class MetaExamSolutions(Dataset):
         return token_seqs, token_lengths
 
     def combine_data_sources(
-            self, 
+            self,
             programs_list,
-            traces_list, 
-            indices_list, 
-            labels_list, 
-            tasks_list, 
+            traces_list,
+            indices_list,
+            labels_list,
+            tasks_list,
             questions_list,
             task_splits_list,
-            task_classes_list, 
-            task_stats_list, 
+            task_classes_list,
+            task_stats_list,
             rubrics_list,
             prompts_list,
             equivalences_list,
@@ -748,7 +1578,7 @@ class MetaExamSolutions(Dataset):
 
         edited_cache = False
         cache_file = os.path.join(
-            cache_path, 
+            cache_path,
             f'sentence_bert_rubric_cache_{self.n_shots}shots_{self.n_queries}queries.pth.tar',
         )
         if os.path.exists(cache_file):
@@ -775,7 +1605,7 @@ class MetaExamSolutions(Dataset):
 
         texts_to_run = []  # these are the things we need to run
 
-        for text in texts: 
+        for text in texts:
             text = str(text)
             if text in roberta_cache:
                 embs = roberta_cache[text]
@@ -810,7 +1640,7 @@ class MetaExamSolutions(Dataset):
 
         edited_cache = False
         cache_file = os.path.join(
-            cache_path, 
+            cache_path,
             f'sentence_bert_prompt_cache_{self.n_shots}shots_{self.n_queries}queries.pth.tar',
         )
         if os.path.exists(cache_file):
@@ -824,7 +1654,7 @@ class MetaExamSolutions(Dataset):
         texts_to_run = []  # these are the things we need to run
         hashs_to_run = []
 
-        for prompt in prompt_list: 
+        for prompt in prompt_list:
             prompt = str(prompt)
             prompt_hash = hashlib.sha256(prompt.encode('utf-8')).hexdigest()
             if prompt_hash in roberta_cache:
@@ -859,7 +1689,7 @@ class MetaExamSolutions(Dataset):
 
     def train_test_split_by_question(self, questions, train=True, train_frac=0.9):
         """
-        Split tasks into train and test splits but do so preserving that all the 
+        Split tasks into train and test splits but do so preserving that all the
         tasks from one question are put together. Otherwise, it is cheating a bit
         since the same programs where seen in training.
         """
@@ -870,9 +1700,9 @@ class MetaExamSolutions(Dataset):
         # important to fix the random seed here we get same split every call
         train_questions = self.rs.choice(unique_questions, num_train, replace=False)
         train_questions = np.sort(train_questions)
-        
+
         if train:
-            split_indices = np.in1d(questions, train_questions) 
+            split_indices = np.in1d(questions, train_questions)
         else:
             split_indices = ~np.in1d(questions, train_questions)
 
@@ -882,10 +1712,10 @@ class MetaExamSolutions(Dataset):
     def process_variables(self, traces, max_num_var=100, max_num_func=10):
         """
         For each program, find which tokens can be considered variables.
-        replace variables with <VAR:NUM> or <FUNC:NUM> so that we can 
+        replace variables with <VAR:NUM> or <FUNC:NUM> so that we can
         minimize extra variables. Also ignore special python keywords.
-        Also, if there are more than <max_num_var>, we just cap with 
-        <FUNC:NEW> or <VAR:NEW>. 
+        Also, if there are more than <max_num_var>, we just cap with
+        <FUNC:NEW> or <VAR:NEW>.
         """
         bad_compilation = 0
         num_programs = len(traces)
@@ -906,7 +1736,7 @@ class MetaExamSolutions(Dataset):
                 token = obj.string
                 is_reserved = token in PYTHON_KEYWORDS
                 # parsing will consider python reserved keywords
-                # "NAME" objects as well. We need to avoid this as 
+                # "NAME" objects as well. We need to avoid this as
                 # best we can.
                 is_var = (obj.type == 1) and not is_reserved
 
@@ -950,7 +1780,7 @@ class MetaExamSolutions(Dataset):
             if trace is None or len(trace) == 0:
                 bad_compilation += 1
                 continue
-            
+
             for obj in trace:
                 token = obj.string
                 is_var = obj.type == 1
@@ -961,7 +1791,7 @@ class MetaExamSolutions(Dataset):
                     all_variables.append(token_index)
 
             variables[i] = sorted(list(set(variables[i])))
-        
+
         all_variables = sorted(list(set(all_variables)))
         print(f'\t{bad_compilation} programs unable to compile.')
         return variables, all_variables
@@ -982,7 +1812,7 @@ class MetaExamSolutions(Dataset):
         """
         See https://arxiv.org/pdf/2009.08445.pdf. We create meta
         learning tasks by choosing N random words and finding all
-        sentences that contain those words. To do this, we will 
+        sentences that contain those words. To do this, we will
         need to map unique tokens to all sentences that contain it.
         """
         token_id_to_indices = defaultdict(lambda: [])
@@ -992,7 +1822,7 @@ class MetaExamSolutions(Dataset):
         token_id_to_indices = dict(token_id_to_indices)
         return token_id_to_indices
 
-    def prepare_cloze(self, indices, cloze_mappings, 
+    def prepare_cloze(self, indices, cloze_mappings,
                       num_tasks, n_way, n_shots, n_queries):
         indices_by_task = defaultdict(lambda: [])
         masks_by_task = defaultdict(lambda: [])
@@ -1023,8 +1853,8 @@ class MetaExamSolutions(Dataset):
             # tokens because we are swapping them a lot
             reserved_tokens += self.func_tokens
             reserved_tokens += self.var_tokens
-        
-        vocab = sorted(list(set(list(cloze_mappings.keys())) - 
+
+        vocab = sorted(list(set(list(cloze_mappings.keys())) -
                             set(reserved_tokens)))
         # pick only from the vocab that has enough members
         valid_vocab = []
@@ -1041,8 +1871,8 @@ class MetaExamSolutions(Dataset):
             for l, token in enumerate(task_tokens):
                 indices = cloze_mappings[token]
                 indices = self.rs.choice(
-                    indices, 
-                    size=n_shots+n_queries, 
+                    indices,
+                    size=n_shots+n_queries,
                     replace=False,
                 )
                 labels = [l for _ in range(len(indices))]
@@ -1061,13 +1891,13 @@ class MetaExamSolutions(Dataset):
     def init_smlmt_task(self, token_seqs):
         return self.init_cloze_task(token_seqs)
 
-    def prepare_smlmt(self, indices, smlmt_mappings, 
+    def prepare_smlmt(self, indices, smlmt_mappings,
                       num_tasks, n_way, n_shots, n_queries):
         indices_by_task = defaultdict(lambda: [])
         masks_by_task = defaultdict(lambda: [])
         labels_by_task = defaultdict(lambda: [])
         rubrics_by_task = defaultdict(lambda: [])
-        
+
         vocab = sorted(list(smlmt_mappings.keys()))
 
         # pick only from the vocab that has enough members
@@ -1085,8 +1915,8 @@ class MetaExamSolutions(Dataset):
             for l, token in enumerate(task_tokens):
                 indices = smlmt_mappings[token]
                 indices = self.rs.choice(
-                    indices, 
-                    size=n_shots+n_queries, 
+                    indices,
+                    size=n_shots+n_queries,
                     replace=False,
                 )
                 labels = [l for _ in range(len(indices))]
@@ -1122,11 +1952,11 @@ class MetaExamSolutions(Dataset):
         for program in programs:
             output = execute_program(program)
             outputs.append(output)
-        
+
         output_vocab = sorted(list(set(outputs)))
         return outputs, output_vocab
 
-    def prepare_execution_task(self, indices, executions, execution_vocab, 
+    def prepare_execution_task(self, indices, executions, execution_vocab,
                                num_tasks, n_way, n_shots, n_queries):
         indices_by_task = defaultdict(lambda: [])
         labels_by_task = defaultdict(lambda: [])
@@ -1149,8 +1979,8 @@ class MetaExamSolutions(Dataset):
             for l, task_class in enumerate(task_classes):
                 indices = np.where(executions == task_class)[0]
                 indices = self.rs.choice(
-                    indices, 
-                    size=n_shots+n_queries, 
+                    indices,
+                    size=n_shots+n_queries,
                     replace=False,
                 )
                 labels = [l for _ in range(len(indices))]
@@ -1178,7 +2008,7 @@ class MetaExamSolutions(Dataset):
             rubric_name = json.loads(rubric_name)['human_label']
         else:
             raise Exception('type not supported.')
-        
+
         prompt_text = self.prompts[index]
 
         if self.roberta_rubric:
@@ -1237,7 +2067,7 @@ class MetaExamSolutions(Dataset):
 
         num_classes = self.task_classes[task]
 
-        rubric_embs = [] 
+        rubric_embs = []
         prompt_embs = []
         for cls in range(num_classes):
             valid_indices = np.where(labs == cls)[0]
@@ -1266,17 +2096,17 @@ class MetaExamSolutions(Dataset):
                             p=0.5,
                         )
                         lens_s = self.token_lens[new_s]
-                    # can't augment names if SMLMT task bc we might 
+                    # can't augment names if SMLMT task bc we might
                     # be try to predict those. We can with cloze task
                     # because we avoid names.
                     if self.augment_by_names and not is_smlmt:
                         toks_s = shuffle_names_augmentation(
-                            toks_s, 
+                            toks_s,
                             self.vocab,
                             self.func_tokens,
                             self.var_tokens,
                             p=0.5,
-                        ) 
+                        )
                     # --- done ---
                     support_toks_cls.append(toks_s)
                     support_lens_cls.append(lens_s)
@@ -1304,8 +2134,8 @@ class MetaExamSolutions(Dataset):
 
                     # don't shuffle entries if this is a cloze/execution/smlmt task.
                     is_aux = task_type in [
-                        self.cloze_task_type, 
-                        self.execution_task_type, 
+                        self.cloze_task_type,
+                        self.execution_task_type,
                         self.smlmt_task_type,
                     ]
                     is_smlmt = task_type == self.smlmt_task_type
@@ -1319,8 +2149,8 @@ class MetaExamSolutions(Dataset):
                         lens_s = self.token_lens[new_s]
                     if self.augment_by_names and not is_smlmt:
                         toks_s = shuffle_names_augmentation(
-                            toks_s, 
-                            self.vocab, 
+                            toks_s,
+                            self.vocab,
                             self.func_tokens,
                             self.var_tokens,
                             p=0.5,
@@ -1350,24 +2180,24 @@ class MetaExamSolutions(Dataset):
 
         if self.pad_to_max_num_class:
             # we want everything to be of the same number of classes
-            # so that can organize them as a minibatch. Each sentence 
+            # so that can organize them as a minibatch. Each sentence
             # is going to be ['<s>', '</s>'] (length 2).
             num_class = support_toks.shape[0]
             if num_class < self.max_num_classes:
-                support_fill_toks = np.zeros((self.max_num_classes - num_class, 
-                                              support_toks.shape[1], 
+                support_fill_toks = np.zeros((self.max_num_classes - num_class,
+                                              support_toks.shape[1],
                                               support_toks.shape[2]))
                 support_fill_toks[:, :, 0] = self.w2i[SOS_TOKEN]
                 support_fill_toks[:, :, 1] = self.w2i[EOS_TOKEN]
                 support_fill_toks[:, :, 2:] = self.w2i[PAD_TOKEN]
                 support_fill_lens = np.zeros((self.max_num_classes - num_class,
                                               support_lens.shape[1])) + 2
-                # filler label is always 0. 
-                support_fill_labs = np.zeros((self.max_num_classes - num_class, 
+                # filler label is always 0.
+                support_fill_labs = np.zeros((self.max_num_classes - num_class,
                                               support_labs.shape[1]))
 
-                query_fill_toks = np.zeros((self.max_num_classes - num_class, 
-                                            query_toks.shape[1], 
+                query_fill_toks = np.zeros((self.max_num_classes - num_class,
+                                            query_toks.shape[1],
                                             query_toks.shape[2]))
                 query_fill_toks[:, :, 0] = self.w2i[SOS_TOKEN]
                 query_fill_toks[:, :, 1] = self.w2i[EOS_TOKEN]
@@ -1389,7 +2219,7 @@ class MetaExamSolutions(Dataset):
         support_lens = torch.from_numpy(support_lens).long()
         support_labs = torch.from_numpy(support_labs).long()
         support_masks = self.build_attention_masks(support_lens.view(-1))
-        support_masks = support_masks.view(num_classes, self.n_shots, -1) 
+        support_masks = support_masks.view(num_classes, self.n_shots, -1)
 
         query_toks = torch.from_numpy(query_toks).long()
         query_lens = torch.from_numpy(query_lens).long()
@@ -1460,7 +2290,7 @@ class SupervisedExamSolutions(MetaExamSolutions):
             max_num_func=10,
             max_seq_len=max_seq_len,
             min_occ=min_occ,
-            train=meta_train,  # always true! 
+            train=meta_train,  # always true!
             train_frac=0.9,
             hold_out_split=hold_out_split,
             hold_out_category=hold_out_category,
@@ -1557,7 +2387,7 @@ class SupervisedExamSolutions(MetaExamSolutions):
     def __len__(self):
         return len(self.data['tokens'])
 
-
+# I THINK: returns a dictionary where for every answer, you get the indices of all the answers with the same exact rubric items
 def build_many_equivalences(tasks, rubrics):
     utasks = list(set(tasks))
 
@@ -1566,7 +2396,7 @@ def build_many_equivalences(tasks, rubrics):
         for k, v in rubric.items():
             k = json.loads(k)
             simple[k['abbrev_label']] = v
-        return simple 
+        return simple
 
     def get_all_keys(rubrics):
         keys = []
@@ -1583,7 +2413,7 @@ def build_many_equivalences(tasks, rubrics):
         task_keys = get_all_keys(task_rubrics)
         task_rubrics = [[r.get(key, False) for key in task_keys] for r in task_rubrics]
         task_rubrics = np.array(task_rubrics)
-    
+
         task_equivalences = build_equivalences(task_indices, task_rubrics)
         equivalences.update(task_equivalences)
 
@@ -1632,6 +2462,9 @@ def clean_program(program):
     return program
 
 
+# I THINK: Drops rubrics with generalDeduction or comments
+# and then replaces the rubric with human-readable labels.
+# It also returns rubric_map, a dictionary of human-readable rubric itens to all the JSON strings they replaced
 def clean_exam_rubrics(rubrics, key='human_label'):
     new_rubrics = []
     rubric_map = defaultdict(lambda: [])
@@ -1649,7 +2482,7 @@ def clean_exam_rubrics(rubrics, key='human_label'):
         new_rubrics.append(new_rubric)
     return new_rubrics, rubric_map
 
-
+# I THINK: Gets a list of all the keys in rubrics
 def get_exam_rubric_keys(rubrics):
     all_keys = set()
     for rubric in rubrics:
@@ -1672,38 +2505,43 @@ def construct_tasks_by_rubric(indices, rubrics, prompts, tasks, is_test):
         raw_task_rubrics = rubrics[tasks == ta]
         task_rubrics, task_rmap = clean_exam_rubrics(raw_task_rubrics)
         rubric_keys = get_exam_rubric_keys(task_rubrics)
-        
+
+        # Get the prompt for the task (question text)
         task_prompts = prompts[tasks == ta]
         assert len(set(task_prompts)) == 1
         task_prompt = task_prompts[0]
 
+        # Get if the task is a holdout for test
         task_is_test = is_test[tasks == ta]
         task_is_test = set(task_is_test)
         assert len(task_is_test) == 1
         task_is_test = list(task_is_test)[0]
 
         # each rubric key will be a new task
-        for k in rubric_keys:
-            new_task_labels = np.array([r.get(k, False) for r in task_rubrics])
+        for k in rubric_keys: # For each potential rubric item for this task
+            new_task_labels = np.array([r.get(k, False) for r in task_rubrics]) # Check if each answer has the rubric item
             unique_labels = np.unique(new_task_labels)
             new_task_classes = len(unique_labels)
             new_task_stats = dict(Counter(new_task_labels))
             new_task = (np.zeros_like(new_task_labels) + task_cnt).astype(int)
             new_q = np.zeros_like(new_task) + ta
-            task_label_to_rubric[task_cnt] = list(task_rmap[k])
+            task_label_to_rubric[task_cnt] = list(task_rmap[k]) # TODO: For a rubric item (which are our new tasks)
+            # this is going to be a map from the name of that rubric item to all the JSON strings it had.
+            # This is going to be same for every rubric item in the same original task. Idk why this is useful
 
             new_indices.append(task_indices)
             new_labels.append(new_task_labels)
             new_tasks.append(new_task)
             new_questions.append(new_q)
 
-            task_to_split_mapping[task_cnt] = task_is_test
+            task_to_split_mapping[task_cnt] = task_is_test # If should be excluded from training
             task_to_class_mapping[task_cnt] = new_task_classes
             task_to_stats_mapping[task_cnt] = new_task_stats
             task_to_prompt[task_cnt] = task_prompt
 
             task_cnt += 1
 
+    # Combine the new items to get a single list
     new_indices = np.concatenate(new_indices)
     new_labels = np.concatenate(new_labels)
     new_tasks = np.concatenate(new_tasks)
@@ -1714,11 +2552,13 @@ def construct_tasks_by_rubric(indices, rubrics, prompts, tasks, is_test):
            task_to_stats_mapping, task_label_to_rubric, task_to_prompt
 
 
-def remove_small_classes(indices, labels, tasks, questions, task_splits, 
-                         task_classes, task_stats, rubric_maps, prompt_maps, 
+def remove_small_classes(indices, labels, tasks, questions, task_splits,
+                         task_classes, task_stats, rubric_maps, prompt_maps,
                          min_freq=1):
     """
     Small classes will be removed as there are not enough examples in them.
+
+    Small means any rubric category with <min_freq
     """
     new_indices = []
     new_labels = []
@@ -1730,13 +2570,13 @@ def remove_small_classes(indices, labels, tasks, questions, task_splits,
     new_rubric_maps = {}
     new_prompt_maps = {}
 
-    task_ix = 0 
+    task_ix = 0
     for ta in np.unique(tasks):
         task_indices = indices[tasks == ta]
         task_questions = questions[tasks == ta]
         task_labels = labels[tasks == ta]
         task_freqs = Counter(task_labels).most_common()
-        task_freqs = task_freqs[::-1] 
+        task_freqs = task_freqs[::-1]
         task_freqs = sorted(task_freqs, key=lambda x: x[0])
 
         task_cnts = np.array([t[1] for t in task_freqs])
@@ -1748,6 +2588,7 @@ def remove_small_classes(indices, labels, tasks, questions, task_splits,
             # trivial task now... delete
             continue
 
+        # calc old to new index conversion
         old_to_new = {}
         for new, (old, _) in enumerate(task_freqs):
             old_to_new[old] = new
@@ -1768,7 +2609,7 @@ def remove_small_classes(indices, labels, tasks, questions, task_splits,
         new_labels.extend(list(new_task_labels))
         new_indices.extend(list(new_task_indices))
         new_questions.extend(list(new_task_questions))
-        new_task_splits[task_ix] = task_splits[ta] 
+        new_task_splits[task_ix] = task_splits[ta]
         new_task_classes[task_ix] = num_above
         new_task_stats[task_ix] = ta_stats
         new_rubric_maps[task_ix] = rubric_maps[ta]
@@ -1781,8 +2622,8 @@ def remove_small_classes(indices, labels, tasks, questions, task_splits,
            new_rubric_maps, new_prompt_maps
 
 
-def make_binary_tasks(indices, labels, tasks, questions, task_splits, 
-                      task_classes, task_stats, rubric_maps, prompt_maps, 
+def make_binary_tasks(indices, labels, tasks, questions, task_splits,
+                      task_classes, task_stats, rubric_maps, prompt_maps,
                       min_freq=1):
     """
     Combine small classes to make binary tasks.
@@ -1808,19 +2649,19 @@ def make_binary_tasks(indices, labels, tasks, questions, task_splits,
         task_labels = labels[tasks == ta]
 
         if task_classes[ta] == 2:
-            # do nothing... 
+            # do nothing...
             new_task_indices = list(task_indices)
             new_task_questions = list(task_questions)
             new_task_labels = list(task_labels)
             new_task_tasks = list(tasks[tasks == ta])
-            new_task_splits = task_splits[ta] 
+            new_task_splits = task_splits[ta]
             new_task_classes = 2
             new_task_stats = task_stats[ta]
             new_task_rubric_maps = rubric_maps[ta]
             new_task_prompt_maps = prompt_maps[ta]
         else:
-            # we can get away with a really easy policy: take the 
-            # most common class and then sum all of the other ones 
+            # we can get away with a really easy policy: take the
+            # most common class and then sum all of the other ones
             # as a second class.
             task_freqs = Counter(task_labels).most_common()
             most_common_label = task_freqs[0][0]
@@ -1834,7 +2675,7 @@ def make_binary_tasks(indices, labels, tasks, questions, task_splits,
             new_task_classes = 2
             new_task_stats = {
                 0: sum(new_task_labels == 0),
-                1: sum(new_task_labels == 1), 
+                1: sum(new_task_labels == 1),
             }
             new_task_labels = list(new_task_labels)
             new_task_rubric_maps = rubric_maps[ta]
@@ -1855,11 +2696,11 @@ def make_binary_tasks(indices, labels, tasks, questions, task_splits,
            new_prompt_maps
 
 
-def make_binary_tasks_liberally(indices, labels, tasks, questions, task_splits, 
-                                task_classes, task_stats, rubric_maps, prompt_maps, 
+def make_binary_tasks_liberally(indices, labels, tasks, questions, task_splits,
+                                task_classes, task_stats, rubric_maps, prompt_maps,
                                 min_freq=1):
     """
-    Combine small classes to make binary tasks. But do this exhaustively 
+    Combine small classes to make binary tasks. But do this exhaustively
     for options.
     """
     new_indices = []
@@ -1880,12 +2721,16 @@ def make_binary_tasks_liberally(indices, labels, tasks, questions, task_splits,
     task_count = 0
 
     for ta in np.unique(tasks):
+        # print(f"TASK is {ta}")
         task_indices = indices[tasks == ta]
         task_questions = questions[tasks == ta]
         task_labels = labels[tasks == ta]
+        # print(task_labels)
+        # print(len(task_indices))
 
         uniq_task_labels = np.unique(task_labels)
         num_labels = uniq_task_labels.shape[0]
+        # print(f"THERE are {num_labels} possibilities")
 
         for i in range(num_labels):
             new_task_indices = list(task_indices)
@@ -1932,16 +2777,16 @@ def merge_small_classes(labels, tasks, task_classes, task_stats, rubric_maps):
         if task_classes[ta] == 2:
             # nothing we can do for binary tasks
             continue
-        
+
         task_labels = labels[tasks == ta]
         task_freqs = Counter(task_labels).most_common()
-        task_freqs = task_freqs[::-1] 
+        task_freqs = task_freqs[::-1]
 
         new_classes = []
-        group_labels = [] 
+        group_labels = []
         group_freqs = 0
         goal_freq = task_freqs[-1][1]  # largest class!
-        
+
         for label, freq in task_freqs:
             if (group_freqs + freq) < goal_freq:
                 group_freqs += freq
@@ -1965,7 +2810,7 @@ def merge_small_classes(labels, tasks, task_classes, task_stats, rubric_maps):
         for i, grp in enumerate(new_classes):
             for lab in grp:
                 old_to_new[lab] = i
-        
+
         new_task_labels = np.array([old_to_new[l] for l in task_labels])
         new_labels[tasks == ta] = new_task_labels
         new_task_classes[ta] = len(new_classes)
@@ -1990,7 +2835,7 @@ def prune_trivial_classes(indices, labels, tasks, questions, task_classes, task_
 
     unique_tasks = np.unique(tasks)
     new_task_i = 0
-    
+
     for task_i in unique_tasks:
         if task_i not in trivial_tasks:
             keep_indices = tasks == task_i
@@ -2014,7 +2859,7 @@ def prune_trivial_classes(indices, labels, tasks, questions, task_classes, task_
 
 def shuffle_names_augmentation(token_seqs, vocab, func_tokens, var_tokens, p=0.5):
     """
-    We want to shuffle around the <FUNC:int> and <VAR:int> variables 
+    We want to shuffle around the <FUNC:int> and <VAR:int> variables
     so the model doesn't start memorizing this.
 
     @param token_seqs: max_seq_len
@@ -2044,11 +2889,11 @@ def shuffle_names_augmentation(token_seqs, vocab, func_tokens, var_tokens, p=0.5
         else:
             new_token_i = token_i
         new_token_seqs.append(new_token_i)
-    
+
     return new_token_seqs
 
 
-def shuffle_entries_augmentation(index, equivalence_maps, all_token_seqs, p=0.5): 
+def shuffle_entries_augmentation(index, equivalence_maps, all_token_seqs, p=0.5):
     if random.random() < p:
         indices = equivalence_maps[index]
         if len(indices) > 0:
@@ -2061,7 +2906,7 @@ def remap_equivalences(equivalences, index_mapping):
     new_equivalences = {}
     for old_index, new_index in index_mapping.items():
         old_eq = equivalences[old_index]
-        # we need to map everything in this 
+        # we need to map everything in this
         new_eq = []
         for ix in old_eq:
             # throw away ones not in our split
