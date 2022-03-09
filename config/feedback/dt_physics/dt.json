@@ -1,5 +1,5 @@
 {
-    "exp_base": "./config/nlp/feedback/dt_physics/exp_dir/<DATE>",
+    "exp_base": "./config/feedback/dt_physics/exp_dir/<DATE>",
     "exp_name": "experiment_dt",
     "agent": "TextPrototypeNetAgent",
     "cuda": false,
