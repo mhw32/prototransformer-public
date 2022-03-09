@@ -703,6 +703,7 @@ class CodePrototypeNetAgent(BaseCodeMetaAgent):
         self.train_acc.append(accuracies)
         self.temp.append(self.tau.item())
         print(f'Temperature: {self.tau.item()}')
+        return f'Meta-Train Tasks: {accuracies}'
 
     def eval_split(self, name, loader):
         tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
@@ -1663,10 +1664,10 @@ class TextPrototypeNetAgent(BaseAgent):
         for epoch in range(self.current_epoch, self.config.optim.num_epochs):
             print(f"Epoch: {epoch}") # to write to tee
             self.current_epoch = epoch
-            self.train_one_epoch()
+            write_acc_to_file(self.train_one_epoch())
 
             if (self.config.validate and epoch % self.config.validate_freq == 0):
-                self.eval_test()
+                write_acc_to_file(self.eval_test())
 
             self.save_checkpoint()
 
@@ -1963,6 +1964,7 @@ class TextPrototypeNetAgent(BaseAgent):
         self.train_acc.append(accuracies)
         self.temp.append(self.tau.item())
         print(f'Temperature: {self.tau.item()}')
+        return f'Meta-Train Tasks: {accuracies}'
 
     def eval_split(self, name, loader):
         tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
@@ -2004,3 +2006,4 @@ class TextPrototypeNetAgent(BaseAgent):
             self.iter_with_no_improv = 0
         else:
             self.iter_with_no_improv += 1
+        return f'Meta-Val Tasks: {acc}'

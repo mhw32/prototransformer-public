@@ -3,6 +3,7 @@ import torch
 import logging
 from torch.utils.data import DataLoader
 import logging
+import os
 
 from src.utils import utils
 
@@ -11,6 +12,7 @@ class BaseAgent(object):
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger("Agent")
+        self.log_path = os.path.join(config.log_dir, "log.txt")
 
         self._set_seed()  # set seed as early as possible
 
@@ -110,6 +112,13 @@ class BaseAgent(object):
             # self.logger.info("Interrupt detected. Saving data...")
             self.backup()
             raise e
+
+    def write_acc_to_file(accuracy):
+        assert isinstance(accuracy, str)
+        f = open(self.log_path, "w")
+        f.write(accuracy + "\n")
+        f.close()
+        print("writing acc to file")
 
     def train(self):
         """
