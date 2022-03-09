@@ -118,7 +118,7 @@ class BaseAgent(object):
         f = open(self.log_path, "w")
         f.write(accuracy + "\n")
         f.close()
-        print("writing acc to file")
+        print(f"writing acc to file: {self.log_path}")
 
     def train(self):
         """
