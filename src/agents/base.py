@@ -115,7 +115,7 @@ class BaseAgent(object):
 
     def write_acc_to_file(self, accuracy):
         assert isinstance(accuracy, str)
-        f = open(self.log_path, "w")
+        f = open(self.log_path, "a")
         f.write(accuracy + "\n")
         f.close()
         print(f"writing acc to file: {self.log_path}")
