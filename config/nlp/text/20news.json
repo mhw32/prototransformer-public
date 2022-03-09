@@ -13,7 +13,7 @@
             "n_ways": 5,
             "n_shots": 5,
             "n_queries": 5,
-            "smlmt_tasks_factor": 0
+            "smlmt_tasks_factor": 0.1
         },
         "test": {
             "n_ways": 5,
@@ -24,9 +24,9 @@
     "optim": {
         "batch_size": 1,
         "learning_rate": 1e-4,
-        "weight_decay": 0,
+        "weight_decay": 0.01,
         "patience": 1000,
-        "num_epochs": 200,
+        "num_epochs": 30,
         "warmup_steps": 10000,
         "use_scheduler": true
     },
@@ -41,6 +41,6 @@
     "validate": true,
     "validate_freq": 1,
     "copy_checkpoint_freq": 10,
-    "continue_exp_dir": null,
-    "continue_exp_name": null
+    "continue_exp_dir": "config/nlp/text/exp_dir/3_7_2022/experiments/20news_5shot_proto_transformer",
+    "continue_exp_name": "checkpoint_epoch90.pth.tar"
 }
