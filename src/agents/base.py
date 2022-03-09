@@ -116,7 +116,7 @@ class BaseAgent(object):
     def write_to_file(self, text):
         assert text != None
         f = open(self.log_path, "a")
-        f.write(text + "\n")
+        f.write(str(text) + "\n")
         f.close()
         print(f"writing (acc or epoch) to file: {self.log_path}")
 
