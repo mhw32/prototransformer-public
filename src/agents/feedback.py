@@ -1664,10 +1664,11 @@ class TextPrototypeNetAgent(BaseAgent):
         for epoch in range(self.current_epoch, self.config.optim.num_epochs):
             print(f"Epoch: {epoch}") # to write to tee
             self.current_epoch = epoch
-            self.write_acc_to_file(self.train_one_epoch())
+            self.write_to_file(epoch)
+            self.write_to_file(self.train_one_epoch())
 
             if (self.config.validate and epoch % self.config.validate_freq == 0):
-                self.write_acc_to_file(self.eval_test())
+                self.write_to_file(self.eval_test())
 
             self.save_checkpoint()
 
