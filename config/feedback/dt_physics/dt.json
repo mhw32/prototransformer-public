@@ -2,10 +2,10 @@
     "exp_base": "./config/nlp/feedback/dt_physics/exp_dir/<DATE>",
     "exp_name": "experiment_dt",
     "agent": "TextPrototypeNetAgent",
-    "cuda": false,
+    "cuda": true,
     "gpu_device": 8,
     "seed": 42,
-    "data_loader_workers": 0,
+    "data_loader_workers": 4,
     "dataset": {
         "data_root": "./config/feedback/dt_physics/data_root/data/",
         "rubric_path": "rubric.csv",
