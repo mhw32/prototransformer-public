@@ -12,6 +12,7 @@ def run(args, gpu_device=0):
     config_json['gpu_device'] = gpu_device
     config = process_config_from_json(config_json)
     AgentClass = globals()[config.agent]
+    print("CONFIGURING AGENT")
     agent = AgentClass(config)
 
     if config.continue_exp_dir is not None:
