@@ -10,13 +10,13 @@
         "name": "fs_20news",
         "data_root": "./config/nlp/text/data_root/data/20news.json",
         "train": {
-            "n_ways": 5,
+            "n_ways": 2,
             "n_shots": 5,
             "n_queries": 5,
             "smlmt_tasks_factor": 0.1
         },
         "test": {
-            "n_ways": 5,
+            "n_ways": 2,
             "n_shots": 5,
             "n_queries": 5
         }

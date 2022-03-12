@@ -26,6 +26,7 @@ class BaseMetaNLPDataset(Dataset):
         ):
         super(BaseMetaNLPDataset, self).__init__()
 
+        print("RUNNING INIT FOR BASEMETANLPDATASET")
         self.data_root = data_root
         self.fix_seed = fix_seed
         self.rs = np.random.RandomState(fix_seed)
@@ -48,6 +49,7 @@ class BaseMetaNLPDataset(Dataset):
         if not os.path.isdir(self.cache_dir): os.makedirs(self.cache_dir)
 
         self.names_dict = self.embed_names(cache_dir=self.cache_dir)
+        print(self.names_dict)
         token_seqs, token_masks, token_labs, token_names = self.process_data(cache_dir=self.cache_dir)
         self.tasks, self.task_types = self.build_meta_tasks(token_seqs, token_masks, token_labs, token_names,
                                                             n_smlmt=self.n_smlmt)
