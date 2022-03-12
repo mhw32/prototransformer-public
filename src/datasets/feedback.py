@@ -616,6 +616,7 @@ class MetaDTSolutions(Dataset):
             print("HAVE A LARGER SAMPLE")
             return self.larger_sample
         else:
+            print("ORIGINAL BEHAVIOR")
             return len(self.task_ids)
 
     def __getitem__(self, index):
