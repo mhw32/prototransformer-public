@@ -125,13 +125,14 @@ class MetaDTSolutions(Dataset):
         if hold_out_split:
             tasks_in_split = np.array([k for k, v in task_splits.items() if v != train])
             split_indices = np.in1d(tasks, tasks_in_split)
-            split_indices = np.where(split_indices)[0]
+            split_indices = np.where(split_indices)[0] # This is the list of indices for test elements
         else:
             # meta tasks train test split randomly based on task.
             split_indices = self.train_test_split_by_question(
                 questions, train=train, train_frac=train_frac)
 
         # indices : remaining indices in the current split
+        print(f"For TRAIN = {train} we have {len(split_indices)} examples")
         indices = [indices[i] for i in split_indices]
         labels = [labels[i] for i in split_indices]
         tasks = [tasks[i] for i in split_indices]
@@ -316,8 +317,7 @@ class MetaDTSolutions(Dataset):
                 remove_small_classes(
                     indices, labels, tasks, questions, task_splits, task_classes,
                     task_stats, rubric_maps, prompt_maps,
-                    min_freq=self.n_shots + self.n_queries) # TODO: Not 100% sure why this is shots + queries...it seems like we only need >=max(shots, queries)
-                # since this will only be one or the other
+                    min_freq=self.n_shots + self.n_queries)
         print("LABELS IN BETWEEN RUBRIC CONSTRUCTION AND REMOVING SMALL TASKS IS: ", labels)
 
         print(f"after removing small tasks is")

@@ -1968,6 +1968,7 @@ class TextPrototypeNetAgent(BaseAgent):
         return f'Meta-Train Tasks: {accuracies}'
 
     def eval_split(self, name, loader):
+        print("DATALOADER LEN: ", len(loader.dataset))
         tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
         self.model.eval()
         loss_meter = utils.AverageMeter()
@@ -1977,6 +1978,7 @@ class TextPrototypeNetAgent(BaseAgent):
 
         with torch.no_grad():
             for batch in loader:
+
                 n_shots = self.config.dataset.train.n_shots
                 n_queries = self.config.dataset.test.n_queries
                 loss, acc, _ = self.forward(batch, n_shots, n_queries)
