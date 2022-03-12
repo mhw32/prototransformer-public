@@ -2534,8 +2534,6 @@ def remove_small_classes(indices, labels, tasks, questions, task_splits,
 
         if num_above < 2:
             if (num_above > 0 and len(task_indices) - task_freqs[0][1] >= min_freq and keep_small):
-                standalones += 1
-                standalone = True
                 # Special case where the we can treat everything except for one category as the negative
                 sufficient_elmnt = task_freqs[0][0]
                 other_elmnt = sufficient_elmnt + 1
@@ -2562,7 +2560,6 @@ def remove_small_classes(indices, labels, tasks, questions, task_splits,
 
         if keep_small and too_small_cnt > 0 and num_above == 2: # The last condition must hold because it's only clear where to merge in the smalls if we
         # are on a binary task
-            ten_and_ten += 2
             for idx, (cur, _) in enumerate(task_freqs): # We need to add a new task for every frequent task so we can merge in the smalls
                 other_large = task_freqs[1 - idx][0]
                 old_to_new = {cur: 0, other_large: 1}
@@ -2580,8 +2577,6 @@ def remove_small_classes(indices, labels, tasks, questions, task_splits,
                 ta_stats = {}
                 for l, f in task_freqs:
                     ta_stats[l] = f
-
-                elmnts_in_ten_and_ten += len(new_task_labels)
 
                 new_tasks.extend([task_ix for _ in range(len(new_task_labels))])
                 new_labels.extend(list(new_task_labels))
@@ -2611,9 +2606,6 @@ def remove_small_classes(indices, labels, tasks, questions, task_splits,
             ta_stats = {}
             for l, f in task_freqs:
                 ta_stats[l] = f
-
-            if standalone:
-                elmnts_in_standalones += len(new_task_labels)
 
             new_tasks.extend([task_ix for _ in range(len(new_task_labels))])
             new_labels.extend(list(new_task_labels))
