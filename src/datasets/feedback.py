@@ -50,7 +50,9 @@ class MetaDTSolutions(Dataset):
             pad_to_max_num_class=False,      # if True, all tasks are padded to the maximum # of classes
             min_task_answers=50,
             simple_binary=False,             # If True, we make each rubric its own binary task instead of just the plurality class
-            larger_sample=0,             # If True, then we make every train and test sample 100 items
+            larger_sample=0,                 # If True, then we make every train and test sample 100 items
+            keep_all_in_train=False,         # If True, then when we binarize in training, we put any examples that aren't large enough for their
+                                             # category as a negative (and now only the TOTAL number of negatives must exceed the minimum size)
         ):
         super(MetaDTSolutions, self).__init__()
 
@@ -91,6 +93,7 @@ class MetaDTSolutions(Dataset):
         self.roberta_device = roberta_device
         self.min_task_answers = min_task_answers
         self.simple_binary = simple_binary
+        self.keep_all_in_train = keep_all_in_train
 
         print('loading exams...')
         answers, indices, labels, tasks, \
@@ -111,8 +114,6 @@ class MetaDTSolutions(Dataset):
 
         # Just checking to make sure it's actually 4-way
         task_of_interst = tasks[0]
-        print(f"rubrics is {len(rubrics[0])} by {len(rubrics)}")
-        print(labels)
 
         # NOTE: loading assignment data has been masked in public repo
         answers, indices, labels, tasks, questions, task_splits, \
@@ -163,7 +164,7 @@ class MetaDTSolutions(Dataset):
         equivalences = remap_equivalences(equivalences, index_mapping)
         equivalences = [equivalences[i] for i in range(len(unique_indices))]
 
-        # Use R
+        # Use Roberta Tokenizer
         self.tokenizer = RobertaTokenizer.from_pretrained(roberta_config)
         self.vocab_size = self.tokenizer.vocab_size
         self.pad_index = self.tokenizer.pad_token_id
@@ -308,7 +309,6 @@ class MetaDTSolutions(Dataset):
         task_classes, task_stats, rubric_maps, prompt_maps = \
             construct_tasks_by_rubric(
                 indices, rubrics, prompts, tasks, is_test)
-        print("OGIRINAL LABELS:", labels)
 
         # We remove any tasks where there are fewer than "self.n_shots + self.n_queries" examples
         print(f"after constructing by rubric")
@@ -320,8 +320,7 @@ class MetaDTSolutions(Dataset):
                 remove_small_classes(
                     indices, labels, tasks, questions, task_splits, task_classes,
                     task_stats, rubric_maps, prompt_maps,
-                    min_freq=self.n_shots + self.n_queries)
-        print("LABELS IN BETWEEN RUBRIC CONSTRUCTION AND REMOVING SMALL TASKS IS: ", labels)
+                    min_freq=self.n_shots + self.n_queries, keep_small=(self.keep_all_in_train and self.train))
 
         print(f"after removing small tasks is")
         self.print_debug(tasks, labels, indices)
@@ -2431,6 +2430,7 @@ def get_exam_rubric_keys(rubrics):
 
 
 def construct_tasks_by_rubric(indices, rubrics, prompts, tasks, is_test):
+    # min freq is only required if real_acc, so we need to check anything we're adding is min_freq
     new_indices, new_labels, new_tasks, new_questions = [], [], [], []
     task_cnt = 0
     task_to_split_mapping = {}
@@ -2493,7 +2493,7 @@ def construct_tasks_by_rubric(indices, rubrics, prompts, tasks, is_test):
 
 def remove_small_classes(indices, labels, tasks, questions, task_splits,
                          task_classes, task_stats, rubric_maps, prompt_maps,
-                         min_freq=1):
+                         min_freq=1, keep_small=False):
     """
     Small classes will be removed as there are not enough examples in them.
 
@@ -2510,7 +2510,14 @@ def remove_small_classes(indices, labels, tasks, questions, task_splits,
     new_prompt_maps = {}
 
     task_ix = 0
+
+    ## These variables are just for debugging
+    standalones = 0
+    elmnts_in_standalones = 0
+    ten_and_ten = 0
+    elmnts_in_ten_and_ten = 0
     for ta in np.unique(tasks):
+        standalone = False
         task_indices = indices[tasks == ta]
         task_questions = questions[tasks == ta]
         task_labels = labels[tasks == ta]
@@ -2521,46 +2528,112 @@ def remove_small_classes(indices, labels, tasks, questions, task_splits,
         task_cnts = np.array([t[1] for t in task_freqs])
         num_above = np.sum(task_cnts >= min_freq)
         keep_ix = np.where(task_cnts >= min_freq)[0]
+        do_not_keep = np.where(task_cnts < min_freq)[0] # Only needed for keep_small
+        too_small_freqs = [task_freqs[ix] for ix in do_not_keep] # Only needed for keep_small
         task_freqs = [task_freqs[ix] for ix in keep_ix]
 
-        # print("IN REMOVE SMALL CLASSES")
-        # print("task is", ta)
-        # print("task labels are", task_labels)
-        # break
+        # Only needed for keep_small
+        too_small_cnt = sum(list(map(lambda x: x[0], too_small_freqs)))
 
         if num_above < 2:
-            # trivial task now... delete
-            continue
+            if (num_above > 0 and len(task_indices) - task_freqs[0][1] >= min_freq and keep_small):
+                standalones += 1
+                standalone = True
+                # Special case where the we can treat everything except for one category as the negative
+                sufficient_elmnt = task_freqs[0][0]
+                other_elmnt = sufficient_elmnt + 1
 
-        # calc old to new index conversion
-        old_to_new = {}
-        for new, (old, _) in enumerate(task_freqs):
-            old_to_new[old] = new
+                # In this case, we just replace all the elements that are not the one above the min_freq with the second most common.
+                # This allows us to leave the rest of the function unchanged
+                task_labels = np.array(list(map(lambda x: int(x) if x == sufficient_elmnt else int(other_elmnt), task_labels)))
+                task_freqs = Counter(task_labels).most_common()
+                task_freqs = task_freqs[::-1]
+                task_freqs = sorted(task_freqs, key=lambda x: x[0])
 
-        slicer = np.where(np.in1d(task_labels, list(old_to_new.keys())))[0]
-        sub_task_labels = task_labels[slicer]
-        new_task_labels = np.array([old_to_new[l] for l in sub_task_labels])
+                task_cnts = np.array([t[1] for t in task_freqs])
+                num_above = np.sum(task_cnts >= min_freq)
+                keep_ix = np.where(task_cnts >= min_freq)[0]
+                do_not_keep = np.where(task_cnts < min_freq)[0] # Only needed for keep_small
+                too_small_freqs = [task_freqs[ix] for ix in do_not_keep] # Only needed for keep_small
+                task_freqs = [task_freqs[ix] for ix in keep_ix]
 
-        new_task_indices = task_indices[slicer]
-        new_task_questions = task_questions[slicer]
+                # We recalculate the keep_small variables as well (too_small_cnt will be important later in the function)
+                too_small_cnt = sum(list(map(lambda x: x[0], too_small_freqs))) # should now be 0
+            else:
+                # trivial task now... delete
+                continue
 
-        # build new stats dict for task
-        ta_stats = {}
-        for l, f in task_freqs:
-            ta_stats[l] = f
+        if keep_small and too_small_cnt > 0 and num_above == 2: # The last condition must hold because it's only clear where to merge in the smalls if we
+        # are on a binary task
+            ten_and_ten += 2
+            for idx, (cur, _) in enumerate(task_freqs): # We need to add a new task for every frequent task so we can merge in the smalls
+                other_large = task_freqs[1 - idx][0]
+                old_to_new = {cur: 0, other_large: 1}
+                for (old, _) in too_small_freqs:
+                    old_to_new[old] = 1
 
-        new_tasks.extend([task_ix for _ in range(len(new_task_labels))])
-        new_labels.extend(list(new_task_labels))
-        new_indices.extend(list(new_task_indices))
-        new_questions.extend(list(new_task_questions))
-        new_task_splits[task_ix] = task_splits[ta]
-        new_task_classes[task_ix] = num_above
-        new_task_stats[task_ix] = ta_stats
-        new_rubric_maps[task_ix] = rubric_maps[ta]
-        new_prompt_maps[task_ix] = prompt_maps[ta]
+                slicer = np.where(np.in1d(task_labels, list(old_to_new.keys())))[0]
+                sub_task_labels = task_labels[slicer]
+                new_task_labels = np.array([old_to_new[l] for l in sub_task_labels])
 
-        task_ix += 1
+                new_task_indices = task_indices[slicer]
+                new_task_questions = task_questions[slicer]
 
+                # build new stats dict for task
+                ta_stats = {}
+                for l, f in task_freqs:
+                    ta_stats[l] = f
+
+                elmnts_in_ten_and_ten += len(new_task_labels)
+
+                new_tasks.extend([task_ix for _ in range(len(new_task_labels))])
+                new_labels.extend(list(new_task_labels))
+                new_indices.extend(list(new_task_indices))
+                new_questions.extend(list(new_task_questions))
+                new_task_splits[task_ix] = task_splits[ta]
+                new_task_classes[task_ix] = num_above
+                new_task_stats[task_ix] = ta_stats
+                new_rubric_maps[task_ix] = rubric_maps[ta]
+                new_prompt_maps[task_ix] = prompt_maps[ta]
+
+                task_ix += 1
+        else:
+            # calc old to new index conversion
+            old_to_new = {}
+            for new, (old, _) in enumerate(task_freqs):
+                old_to_new[old] = new
+
+            slicer = np.where(np.in1d(task_labels, list(old_to_new.keys())))[0]
+            sub_task_labels = task_labels[slicer]
+            new_task_labels = np.array([old_to_new[l] for l in sub_task_labels])
+
+            new_task_indices = task_indices[slicer]
+            new_task_questions = task_questions[slicer]
+
+            # build new stats dict for task
+            ta_stats = {}
+            for l, f in task_freqs:
+                ta_stats[l] = f
+
+            if standalone:
+                elmnts_in_standalones += len(new_task_labels)
+
+            new_tasks.extend([task_ix for _ in range(len(new_task_labels))])
+            new_labels.extend(list(new_task_labels))
+            new_indices.extend(list(new_task_indices))
+            new_questions.extend(list(new_task_questions))
+            new_task_splits[task_ix] = task_splits[ta]
+            new_task_classes[task_ix] = num_above
+            new_task_stats[task_ix] = ta_stats
+            new_rubric_maps[task_ix] = rubric_maps[ta]
+            new_prompt_maps[task_ix] = prompt_maps[ta]
+
+            task_ix += 1
+
+    print("TENAnDTEN: ", ten_and_ten)
+    print("ten and ten elmts:", elmnts_in_ten_and_ten)
+    print("STANDALONESS:", standalones)
+    print("elements in standalones:", elmnts_in_standalones)
     return new_indices, new_labels, new_tasks, new_questions, \
            new_task_splits, new_task_classes, new_task_stats, \
            new_rubric_maps, new_prompt_maps
