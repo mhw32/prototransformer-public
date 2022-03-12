@@ -74,7 +74,7 @@ class BaseMetaNLPDataset(Dataset):
                     truncation=True,
                     padding='max_length',
                     max_length=self.max_seq_len,
-                    pad_to_max_length=True, 
+                    pad_to_max_length=True,
                     return_tensors='pt',
                 )
                 tokens = tokenizer_outputs['input_ids']
@@ -118,14 +118,14 @@ class BaseMetaNLPDataset(Dataset):
 
             print('saving to cache...')
             torch.save(cache, cache_file)
-        
+
         return cache
 
     def build_meta_tasks(self, inputs, masks, labels, names, n_smlmt):
         unique_labels = list(set(labels.numpy().tolist()))
         smlmt_choices = self.prep_smlmt_task(inputs)
 
-        # figure out the combo of unique tasks to build 
+        # figure out the combo of unique tasks to build
         task_labels = list(itertools.combinations(unique_labels, self.n_ways))
         task_labels = np.array(task_labels)
         n_tasks = len(task_labels)
@@ -161,7 +161,7 @@ class BaseMetaNLPDataset(Dataset):
             names_cat = names[np.where(labels.numpy() == cat)[0]]
             assert len(set(names_cat)) == 1
             name_cat = names_cat[0]
-            
+
             name_emb = self.names_dict[name_cat]
             side_info.append(name_emb)
 
@@ -219,11 +219,11 @@ class BaseMetaNLPDataset(Dataset):
     def prep_smlmt_task(self, inputs):
         inputs = inputs.numpy()
         inputs_unique = []
-        
+
         for i in range(len(inputs)):
             inputs_i = np.unique(inputs[i])
             inputs_unique.append(inputs_i)
-        
+
         inputs_unique = np.concatenate(inputs_unique)
         freqs = Counter(inputs_unique)
 
@@ -239,7 +239,7 @@ class BaseMetaNLPDataset(Dataset):
         query_inputs, query_masks, query_labels = [], [], []
 
         for c, cat in enumerate(smlmt_cats):
-            # check which inputs have this 
+            # check which inputs have this
             has_char = (torch.sum(inputs == cat, dim=1) > 0)
             inputs_cat = inputs[has_char].clone()
             masks_cat = masks[has_char]
@@ -247,7 +247,7 @@ class BaseMetaNLPDataset(Dataset):
 
             # replace special cat with mask
             inputs_cat[inputs_cat == cat] = self.mask_index
-           
+
             support_indices = self.rs.choice(np.arange(n_ex_cat), self.n_shots, replace=False)
             query_indices = np.setxor1d(np.arange(n_ex_cat), support_indices)
             query_indices = self.rs.choice(query_indices, self.n_queries, replace=False)
@@ -319,8 +319,8 @@ class BaseSupNLPDataset(BaseMetaNLPDataset):
             train=True,
             fix_seed=1337,
         ):
-        super().__init__(data_root, n_ways, n_shots, n_queries, 
-                         roberta_device=roberta_device, 
+        super().__init__(data_root, n_ways, n_shots, n_queries,
+                         roberta_device=roberta_device,
                          train=train, fix_seed=fix_seed)
         self.task_index = task_index
 

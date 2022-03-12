@@ -16,6 +16,7 @@ class BaseAgent(object):
 
         self._set_seed()  # set seed as early as possible
 
+        print("INITIALIZING BASE AGENT, GOING TO _load_datasets")
         self._load_datasets()
         self._load_loaders()
 

@@ -18,7 +18,7 @@ class BaseFewShotAmazonSentiment(Dataset):
 
     def load_data(self, data_root, split='train'):
         train_domains, test_domains = get_domains(
-            data_root, 
+            data_root,
             'workspace.filtered.list',
             'workspace.target.list')
         if split == 'train':
@@ -45,24 +45,24 @@ class BaseFewShotAmazonSentiment(Dataset):
                     truncation=True,
                     padding='max_length',
                     max_length=max_seq_len,
-                    pad_to_max_length=True, 
+                    pad_to_max_length=True,
                     return_tensors='pt',
                 )
                 neg_token_seqs.append(output_i['input_ids'])
                 neg_token_masks.append(output_i['attention_mask'])
-            
+
             for i in range(len(task_pos_data)):
                 output_i = tokenizer(
                     ' '.join(task_pos_data[i]),
                     truncation=True,
                     padding='max_length',
                     max_length=max_seq_len,
-                    pad_to_max_length=True, 
+                    pad_to_max_length=True,
                     return_tensors='pt',
                 )
                 pos_token_seqs.append(output_i['input_ids'])
                 pos_token_masks.append(output_i['attention_mask'])
-            
+
             data[task_key]['neg']['tokens'] = neg_token_seqs
             data[task_key]['neg']['masks'] = neg_token_masks
             data[task_key]['pos']['tokens'] = pos_token_seqs
@@ -124,6 +124,7 @@ class FewShotAmazonSentiment(BaseFewShotAmazonSentiment):
         self.keys = list(self.data.keys())
         self.n_tasks = len(self.data)
         self.n_smlmt = int(smlmt_tasks_factor * self.n_tasks)
+        print(f"n_smlmt is: {n_smlmt} because it's {smlmt_tasks_factor} (factor) * {self.n_tasks} (n_tasks)")
 
         if self.n_smlmt > 0:
             smlmt_cache = os.path.join(self.cache_dir, f'smlmt_mapping_{split}.pkl')
@@ -158,7 +159,7 @@ class FewShotAmazonSentiment(BaseFewShotAmazonSentiment):
             neg_text = data[key]['neg']['data']
             all_text += pos_text
             all_text += neg_text
-       
+
         unique_text = []
         for i in range(len(all_text)):
             text_i = np.unique(all_text[i])
@@ -172,11 +173,11 @@ class FewShotAmazonSentiment(BaseFewShotAmazonSentiment):
             if fr >= (self.n_shots + self.n_queries):
                 valid_words.append(word)
 
-        # these are the tokens with enough 
+        # these are the tokens with enough
         # labels to choose from!
         smlmt_cats = np.array(valid_words)
 
-        # now we need to map each of these cats to 
+        # now we need to map each of these cats to
         # the indices of sentences that contain them
         smlmt_mapping = defaultdict(lambda: [])
         pbar = tqdm(total=len(all_text))
@@ -220,7 +221,7 @@ class FewShotAmazonSentiment(BaseFewShotAmazonSentiment):
                 text[text == word] = self.mask_token
                 text = text.tolist()
                 masked_data_i.append(text)
-            
+
             if i == 0:
                 targets_i = [0 for _ in range(len(masked_data_i))]
                 data['neg']['data'] = masked_data_i
@@ -229,7 +230,7 @@ class FewShotAmazonSentiment(BaseFewShotAmazonSentiment):
                 targets_i = [1 for _ in range(len(masked_data_i))]
                 data['pos']['data'] = masked_data_i
                 data['pos']['target'] = targets_i
-        
+
         return data
 
     def __getitem__(self, index):
@@ -247,7 +248,7 @@ class FewShotAmazonSentiment(BaseFewShotAmazonSentiment):
 
         # randomly choose a support set and query set
         pos_indices = self.rs.choice(
-            np.arange(num_pos), self.n_shots + self.n_queries, 
+            np.arange(num_pos), self.n_shots + self.n_queries,
             replace=True if num_pos < (self.n_shots + self.n_queries) else False).tolist()
         neg_indices = self.rs.choice(
             np.arange(num_neg), self.n_shots + self.n_queries,
@@ -278,7 +279,7 @@ class FewShotAmazonSentiment(BaseFewShotAmazonSentiment):
             query_masks=masks[:, -self.n_queries:].long(),
             query_labs=labels[:, -self.n_queries:].long(),
             query_lens=lengths[:, -self.n_queries:].long(),
-            # -- 
+            # --
             side_info=self.names_dict[filename].float(),  # 512
             task_type=task_type,
         )
@@ -289,14 +290,14 @@ class FewShotAmazonSentiment(BaseFewShotAmazonSentiment):
 
 
 class EvalFewShotAmazonSentiment(BaseFewShotAmazonSentiment):
-    """Use the first n_shots as support set and compute accuracy 
+    """Use the first n_shots as support set and compute accuracy
     for the rest of the examples in the "test_task_index"-th task.
     """
     def __init__(
             self,
             data_root,
             test_task_index,
-            n_shots=5, 
+            n_shots=5,
             roberta_device='cpu',
             fix_seed=42,
         ):
@@ -326,6 +327,7 @@ class EvalFewShotAmazonSentiment(BaseFewShotAmazonSentiment):
 
         # embed side information
         self.names_dict = self.embed_names([key], self.roberta_device)
+        print(self.names_dict)
 
         # add roberta encodings to self.data
         self.tokenize_data(self.tokenizer, data, [key], max_seq_len=self.max_seq_len)
@@ -376,10 +378,10 @@ class EvalFewShotAmazonSentiment(BaseFewShotAmazonSentiment):
             query_masks=query_masks.long(),  # 512
             query_labs=query_labs,    # 1
             query_lens=query_lens,    # 1
-            # -- 
+            # --
             side_info=self.names_dict[filename].float(),  # 512
         )
-        return task_dict 
+        return task_dict
 
     def __len__(self):
         return self.size
