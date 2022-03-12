@@ -13,7 +13,7 @@
             "n_ways": 5,
             "n_shots": 5,
             "n_queries": 5,
-            "smlmt_tasks_factor": 0.1
+            "smlmt_tasks_factor": 0.25
         },
         "test": {
             "n_ways": 5,
@@ -34,7 +34,7 @@
         "name": "roberta",
         "config": "roberta-base",
         "d_model": 768,
-        "task_tam": false,
+        "task_tam": true,
         "finetune": true,
         "finetune_layers": 3
     },
