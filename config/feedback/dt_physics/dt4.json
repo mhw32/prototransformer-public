@@ -16,12 +16,12 @@
             "augment_by_rubric": true,
             "roberta_rubric": true,
             "roberta_prompt": true,
-            "n_shots": 5,
+            "n_shots": 3,
             "conservative": true,
             "simple_binary": false
         },
         "test": {
-            "n_queries": 5
+            "n_queries": 3
         },
         "train_frac": 0.9,
         "hold_out_split": true,

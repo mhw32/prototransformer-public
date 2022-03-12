@@ -107,6 +107,11 @@ class MetaDTSolutions(Dataset):
         print("prompts", len(prompts))
         print("equivalences", len(equivalences))
 
+        # Just checking to make sure it's actually 4-way
+        task_of_interst = tasks[0]
+        print(f"rubrics is {len(rubrics[0])} by {len(rubrics)}")
+        print(labels)
+
         # NOTE: loading assignment data has been masked in public repo
         answers, indices, labels, tasks, questions, task_splits, \
         task_classes, task_stats, init_task_types, rubrics, prompts, equivalences = \
@@ -299,6 +304,7 @@ class MetaDTSolutions(Dataset):
         task_classes, task_stats, rubric_maps, prompt_maps = \
             construct_tasks_by_rubric(
                 indices, rubrics, prompts, tasks, is_test)
+        print("OGIRINAL LABELS:", labels)
 
         # We remove any tasks where there are fewer than "self.n_shots + self.n_queries" examples
         print(f"after constructing by rubric")
@@ -312,6 +318,7 @@ class MetaDTSolutions(Dataset):
                     task_stats, rubric_maps, prompt_maps,
                     min_freq=self.n_shots + self.n_queries) # TODO: Not 100% sure why this is shots + queries...it seems like we only need >=max(shots, queries)
                 # since this will only be one or the other
+        print("LABELS IN BETWEEN RUBRIC CONSTRUCTION AND REMOVING SMALL TASKS IS: ", labels)
 
         print(f"after removing small tasks is")
         self.print_debug(tasks, labels, indices)
@@ -2503,6 +2510,11 @@ def remove_small_classes(indices, labels, tasks, questions, task_splits,
         num_above = np.sum(task_cnts >= min_freq)
         keep_ix = np.where(task_cnts >= min_freq)[0]
         task_freqs = [task_freqs[ix] for ix in keep_ix]
+
+        # print("IN REMOVE SMALL CLASSES")
+        # print("task is", ta)
+        # print("task labels are", task_labels)
+        # break
 
         if num_above < 2:
             # trivial task now... delete
