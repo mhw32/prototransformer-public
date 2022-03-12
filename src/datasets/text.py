@@ -60,6 +60,7 @@ class BaseFewShotTextDataset(Dataset):
 
         print('loading data...')
         data, self.classes = self.load_data()
+        print(F"FOR split = {split}, LENGTH OF SELF.CLASSES IS: ", len(self.classes))
         # NOTE: no side information since we don't have anything special
         # NOTE: no smlmt for simplicitly
         self.tokens, self.masks, self.labels = self.process_data(data)
@@ -100,7 +101,7 @@ class BaseFewShotTextDataset(Dataset):
                 truncation=True,
                 padding='max_length',
                 max_length=self.max_seq_len,
-                pad_to_max_length=True, 
+                pad_to_max_length=True,
                 return_tensors='pt',
             )
             tokens.append(outputs['input_ids'])
@@ -111,7 +112,7 @@ class BaseFewShotTextDataset(Dataset):
 
     def prep_smlmt_task(self, data):
         all_text = [row['text'] for row in data]
-   
+
         unique_text = []
         for i in range(len(all_text)):
             text_i = np.unique(all_text[i])
@@ -125,11 +126,11 @@ class BaseFewShotTextDataset(Dataset):
             if fr >= (self.n_shots + self.n_queries):
                 valid_words.append(word)
 
-        # these are the tokens with enough 
+        # these are the tokens with enough
         # labels to choose from!
         smlmt_cats = np.array(valid_words)
 
-        # now we need to map each of these cats to 
+        # now we need to map each of these cats to
         # the indices of sentences that contain them
         smlmt_mapping = defaultdict(lambda: [])
         pbar = tqdm(total=len(all_text))
@@ -147,7 +148,7 @@ class BaseFewShotTextDataset(Dataset):
     def build_smlmt_task(self, smlmt_mapping, data):
         smlmt_words = list(smlmt_mapping.keys())
         words = self.rs.choice(smlmt_words, self.n_ways, replace=False)
-        data = [] 
+        data = []
 
         for i, word in enumerate(words):
             data_i =  {}
@@ -201,7 +202,7 @@ class BaseFewShotTextDataset(Dataset):
             query_masks=task_masks[:, -self.n_queries:].long(),
             query_labs=task_labels[:, -self.n_queries:].long(),
             query_lens=task_lengths[:, -self.n_queries:].long(),
-            # -- 
+            # --
             task_type=0,
         )
         return task_dict

@@ -199,6 +199,7 @@ class MetaDTSolutions(Dataset):
         self.indices_by_task = indices_by_task
         self.labels_by_task = labels_by_task
         self.task_ids = [int(x) for x in sorted(list(indices_by_task.keys()))]
+        print(self.task_ids)
         self.augment_by_rubric = augment_by_rubric
         self.task_types = task_types
         self.num_task_types = len(set(task_types))
@@ -608,8 +609,16 @@ class MetaDTSolutions(Dataset):
 
         return indices_by_task, labels_by_task
 
+    def num_episodes(self):
+        if self.train:
+            return 100
+        elif not self.train:
+            return 100
+        else:
+            raise Exception(f'Split {self.split} not supported.')
+
     def __len__(self):
-        return len(self.task_ids)
+        return self.num_episodes()
 
     def __getitem__(self, index):
         task = int(self.task_ids[index])
