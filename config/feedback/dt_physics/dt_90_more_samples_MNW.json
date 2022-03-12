@@ -11,7 +11,7 @@
         "rubric_path": "rubric.csv",
         "answers_path": "answers.csv",
         "cache_path": "cache",
-        "larger_sample": 100,
+        "larger_sample": 0,
         "train": {
             "augment_by_names": false,
             "augment_by_rubric": true,
