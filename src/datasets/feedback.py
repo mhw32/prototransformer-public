@@ -50,6 +50,7 @@ class MetaDTSolutions(Dataset):
             pad_to_max_num_class=False,      # if True, all tasks are padded to the maximum # of classes
             min_task_answers=50,
             simple_binary=False,             # If True, we make each rubric its own binary task instead of just the plurality class
+            larger_sample=0,             # If True, then we make every train and test sample 100 items
         ):
         super(MetaDTSolutions, self).__init__()
 
@@ -71,6 +72,7 @@ class MetaDTSolutions(Dataset):
             pad_to_max_num_class = False
 
         self.train = train
+        self.larger_sample = larger_sample
         self.train_frac = train_frac
         self.conservative = conservative
         self.vocab = vocab
@@ -609,18 +611,17 @@ class MetaDTSolutions(Dataset):
 
         return indices_by_task, labels_by_task
 
-    def num_episodes(self):
-        if self.train:
-            return 100
-        elif not self.train:
-            return 100
-        else:
-            raise Exception(f'Split {self.split} not supported.')
-
     def __len__(self):
-        return self.num_episodes()
+        if self.larger_sample:
+            return self.larger_sample
+        else:
+            return len(self.task_ids)
 
     def __getitem__(self, index):
+        # Delete to return to normal sampling
+        if self.larger_sample:
+            index = self.rs.choice(np.arange(len(self.task_ids)))
+
         task = int(self.task_ids[index])
         task_type = self.task_types[index]
 

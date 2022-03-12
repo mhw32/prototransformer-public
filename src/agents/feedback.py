@@ -73,6 +73,7 @@ class BaseCodeMetaAgent(BaseAgent):
             hold_out_split=self.config.dataset.hold_out_split,
             hold_out_category=self.config.dataset.hold_out_category,
             enforce_binary=self.config.dataset.enforce_binary,
+            larger_sample=self.config.dataset.larger_sample,
         )
         self.test_dataset = MetaExamSolutions(
             data_root=self.config.data_root,
@@ -99,6 +100,7 @@ class BaseCodeMetaAgent(BaseAgent):
             hold_out_split=self.config.dataset.hold_out_split,
             hold_out_category=self.config.dataset.hold_out_category,
             enforce_binary=self.config.dataset.enforce_binary,
+            larger_sample=self.config.dataset.larger_sample,
         )
 
     def _load_loaders(self):
