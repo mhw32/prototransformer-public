@@ -1445,7 +1445,6 @@ class TextPrototypeNetAgent(BaseAgent):
             roberta_device = 'cpu'
         else:
             roberta_device = f'cuda:{self.config.gpu_device}'
-        print(self.config.dataset.answers_path)
 
         self.train_dataset = MetaDTSolutions(
             data_root=self.config.dataset.data_root,
@@ -1470,7 +1469,7 @@ class TextPrototypeNetAgent(BaseAgent):
             answers_path=self.config.dataset.answers_path,
             cache_path=self.config.dataset.cache_path,
             simple_binary=self.config.train.simple_binary,
-            larger_sample=self.config.dataset.larger_sample,
+            keep_all_in_train=self.config.dataset.train.keep_all_in_train,
         )
         self.test_dataset = MetaDTSolutions(
             data_root=self.config.dataset.data_root,
@@ -1970,8 +1969,6 @@ class TextPrototypeNetAgent(BaseAgent):
         return f'Meta-Train Tasks: {accuracies}'
 
     def eval_split(self, name, loader):
-        print("DATALOADER DATASET LEN: ", len(loader.dataset))
-        print("DATALOADER LEN: ", len(loader))
         tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
         self.model.eval()
         loss_meter = utils.AverageMeter()
