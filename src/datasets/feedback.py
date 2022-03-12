@@ -612,7 +612,9 @@ class MetaDTSolutions(Dataset):
         return indices_by_task, labels_by_task
 
     def __len__(self):
+        print("CALLED LEN, larger_sample is: ", self.larger_sample)
         if self.larger_sample:
+            print("HAVE A LARGER SAMPLE")
             return self.larger_sample
         else:
             return len(self.task_ids)
