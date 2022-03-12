@@ -1973,6 +1973,7 @@ class TextPrototypeNetAgent(BaseAgent):
         print("DATALOADER DATASET LEN: ", len(loader.dataset))
         print("DATALOADER LEN: ", len(loader))
         tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
+        print("LENGTH OF THE LOADER IS:", len(loader))
         self.model.eval()
         loss_meter = utils.AverageMeter()
         all_task_types = list(set(self.test_dataset.task_types))
