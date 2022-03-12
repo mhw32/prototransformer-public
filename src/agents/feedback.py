@@ -1968,7 +1968,8 @@ class TextPrototypeNetAgent(BaseAgent):
         return f'Meta-Train Tasks: {accuracies}'
 
     def eval_split(self, name, loader):
-        print("DATALOADER LEN: ", len(loader.dataset))
+        print("DATALOADER DATASET LEN: ", len(loader.dataset))
+        print("DATALOADER LEN: ", len(loader))
         tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
         self.model.eval()
         loss_meter = utils.AverageMeter()
