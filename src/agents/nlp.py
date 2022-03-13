@@ -398,6 +398,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
 
     def eval_split(self, name, loader, verbose=False):
         tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
+        print(f"EVAL SPLIT IS: {len(loader)}")
         self.model.eval()
         loss_meter = utils.AverageMeter()
         all_task_types = range(2)

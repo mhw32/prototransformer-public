@@ -53,7 +53,7 @@ def evaluate(args, gpu_device=-1):
     test_loader, _ = agent._create_test_dataloader(
         test_dataset,
         config.optim.batch_size,
-    )2
+    )
     _, acc_means, acc_stdevs = agent.eval_split('Test', test_loader)
     print(acc_means)
     print(acc_stdevs)
