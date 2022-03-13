@@ -216,8 +216,6 @@ class BaseFewShotTextDataset(Dataset):
         elif self.split == 'val':
             return 100
         elif self.split == 'test':
-            return 1000
-        elif self.split == "experiment":
             return 10
         else:
             raise Exception(f'Split {self.split} not supported.')

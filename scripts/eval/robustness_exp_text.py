@@ -48,7 +48,7 @@ def evaluate(args, gpu_device=-1):
         n_ways=config.dataset.test.n_ways,
         n_shots=config.dataset.test.n_shots,
         n_queries=config.dataset.test.n_queries,
-        split='experiment',
+        split='test',
     )
     test_loader, _ = agent._create_test_dataloader(
         test_dataset,
