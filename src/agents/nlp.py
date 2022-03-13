@@ -187,11 +187,11 @@ class BaseNLPMetaAgent(BaseAgent):
         raise NotImplementedError
 
     def train(self):
+
         for epoch in range(self.current_epoch, self.config.optim.num_epochs):
             print(f"Epoch: {epoch}")
             self.current_epoch = epoch
-            self.write_to_file(epoch)
-            self.write_to_file(self.train_one_epoch())
+            self.write_to_file(str(epoch) + self.train_one_epoch())
 
             if (self.config.validate and epoch % self.config.validate_freq == 0):
                 self.write_to_file(self.eval_test())
@@ -201,6 +201,11 @@ class BaseNLPMetaAgent(BaseAgent):
             if self.iter_with_no_improv > self.config.optim.patience:
                 self.logger.info("Exceeded patience. Stop training...")
                 break
+
+            # Decay the shot
+            if self.shot_decay:
+                if epoch % self.decay_every == self.decay_every - 1:
+                    self.n_shots -= self.decay_by
 
     def save_metrics(self):
         out_dict = {
