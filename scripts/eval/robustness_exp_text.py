@@ -60,7 +60,7 @@ def evaluate(args, gpu_device=-1):
 
     checkpoint_name = args.checkpoint_file.replace('.pth.tar', '')
     accuracy_fpath = os.path.join(analysis_dir, f'{checkpoint_name}_accuracies.csv')
-    np.savetxt(accuracy_fpath, np.array(accuracies), delimiter=",")
+    np.savez(accuracy_fpath, accuracies=accuracies)
 
 
 if __name__ == "__main__":
