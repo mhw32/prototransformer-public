@@ -403,6 +403,8 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         all_task_types = range(2)
         acc_meters = [utils.AverageMeter() for _ in all_task_types]
         acc_stores = [[] for _ in all_task_types]
+        if verbose:
+            accuracies = [[] for _ in all_task_types]
 
         with torch.no_grad():
             for batch in loader:
@@ -418,13 +420,13 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
                         acc_meters[t_].update(acc[task_type == t].mean())
                         postfix[f"Acc{t}"] = acc_meters[t_].avg
                         acc_stores[t_].append(acc[task_type == t].mean())
+                        if verbose:
+                            accuracies[t_].append(acc[task_type == t])
                 tqdm_batch.update()
             tqdm_batch.close()
 
         if not verbose:
             accuracies = [acc_meters[t].avg for t in all_task_types]
-        elif verbose:
-            accuracies = acc_stores
         accuracy_stdevs = [np.std(acc_stores[t]) for t in all_task_types]
         return loss_meter.avg, accuracies, accuracy_stdevs
 
