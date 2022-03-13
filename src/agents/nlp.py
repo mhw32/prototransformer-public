@@ -405,7 +405,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         acc_meters = [utils.AverageMeter() for _ in all_task_types]
         acc_stores = [[] for _ in all_task_types]
         if verbose:
-            accuracies = [np.array([]) for _ in all_task_types]
+            accuracies = [[] for _ in all_task_types]
 
         with torch.no_grad():
             for batch in loader:
