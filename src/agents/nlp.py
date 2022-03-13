@@ -206,6 +206,8 @@ class BaseNLPMetaAgent(BaseAgent):
             if self.shot_mode == "step_decay":
                 if epoch % self.config.dataset.train.decay_every == self.config.dataset.train.decay_every - 1:
                     self.config.dataset.train.n_shots -= self.config.dataset.train.decay_by
+                    self.train_dataset.update_n_shots(self.config.dataset.train.n_shots)
+                    self.test_dataset.update_n_shots(self.config.dataset.train.n_shots)
 
     def save_metrics(self):
         out_dict = {

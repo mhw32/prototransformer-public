@@ -65,6 +65,9 @@ class BaseFewShotTextDataset(Dataset):
         # NOTE: no smlmt for simplicitly
         self.tokens, self.masks, self.labels = self.process_data(data)
 
+    def update_n_shots(self, new_shots):
+        self.n_shots = new_shots
+
     def make_classes(self):
         raise NotImplementedError
 
