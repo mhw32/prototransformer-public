@@ -11,13 +11,13 @@
         "data_root": "config/nlp/text/data_root/data/huffpost.json",
         "train": {
             "n_ways": 5,
-            "n_shots": 3,
+            "n_shots": 1,
             "n_queries": 3,
             "smlmt_tasks_factor": 0
         },
         "test": {
             "n_ways": 5,
-            "n_shots": 3,
+            "n_shots": 1,
             "n_queries": 3
         }
     },
