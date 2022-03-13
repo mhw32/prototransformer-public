@@ -56,6 +56,7 @@ def evaluate(args, gpu_device=-1):
     )
     _, accuracies, acc_stdevs = agent.eval_split('Test', test_loader, verbose=True)
     print(acc_stdevs)
+    print(accuracies)
 
     checkpoint_name = args.checkpoint_file.replace('.pth.tar', '')
     accuracy_fpath = os.path.join(analysis_dir, f'{checkpoint_name}_accuracies.csv')
