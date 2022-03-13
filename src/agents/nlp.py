@@ -432,7 +432,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
             max_task_len = max(list(map(lambda x: len(x), accuracies)))
             print(max_task_len, max_accuracy_len)
             print(list(map(lambda x: np.vstack(x) if len(x) > 0 else np.zeros((max_task_len, max_accuracy_len)), accuracies)))
-            accuracies = np.vstack(list(map(lambda x: np.vstack(x, axis=0) if len(x) > 0 else np.zeros((max_task_len, max_accuracy_len)), accuracies)))
+            accuracies = np.vstack(list(map(lambda x: np.vstack(x) if len(x) > 0 else np.zeros((max_task_len, max_accuracy_len)), accuracies)))
         accuracy_stdevs = [np.std(acc_stores[t]) for t in all_task_types]
         return loss_meter.avg, accuracies, accuracy_stdevs
 
