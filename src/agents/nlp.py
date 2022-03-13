@@ -429,7 +429,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         if not verbose:
             accuracies = [acc_meters[t].avg for t in all_task_types]
         elif verbose:
-            max_accuracy_len = max(list(map(lambda x: max(list(map(lambda y: len(y), x))), accuracies)))
+            max_accuracy_len = max(list(map(lambda x: max(list(map(lambda y: len(y), x), default=0), default=0), accuracies)))
             accuracies = list(map(lambda x: np.concatenate(x, axis=0) if len(x) > 0 else np.zeros((max_accuracy_len)), accuracies))
         accuracy_stdevs = [np.std(acc_stores[t]) for t in all_task_types]
         return loss_meter.avg, accuracies, accuracy_stdevs
