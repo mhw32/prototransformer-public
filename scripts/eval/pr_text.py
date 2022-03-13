@@ -25,8 +25,8 @@ def evaluate(args, gpu_device=-1):
     agent = AgentClass(config)
 
     agent.load_checkpoint(
-        args.checkpoint_file, 
-        checkpoint_dir=checkpoint_dir, 
+        args.checkpoint_file,
+        checkpoint_dir=checkpoint_dir,
         load_model=True,
         load_optim=False,
         load_epoch=True,
@@ -53,7 +53,7 @@ def evaluate(args, gpu_device=-1):
     test_loader, _ = agent._create_test_dataloader(
         test_dataset,
         config.optim.batch_size,
-    )
+    )2
     _, acc_means, acc_stdevs = agent.eval_split('Test', test_loader)
     print(acc_means)
     print(acc_stdevs)

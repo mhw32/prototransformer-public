@@ -396,7 +396,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         print(f'Temperature: {self.tau.item()}')
         return f'Meta-Train Tasks: {accuracies}'
 
-    def eval_split(self, name, loader):
+    def eval_split(self, name, loader, verbose=False):
         tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
         self.model.eval()
         loss_meter = utils.AverageMeter()
@@ -421,7 +421,10 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
                 tqdm_batch.update()
             tqdm_batch.close()
 
-        accuracies = [acc_meters[t].avg for t in all_task_types]
+        if not verbose:
+            accuracies = [acc_meters[t].avg for t in all_task_types]
+        elif verbose:
+            accuracies = acc_stores
         accuracy_stdevs = [np.std(acc_stores[t]) for t in all_task_types]
         return loss_meter.avg, accuracies, accuracy_stdevs
 
