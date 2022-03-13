@@ -55,11 +55,12 @@ def evaluate(args, gpu_device=-1):
         config.optim.batch_size,
     )
     _, accuracies, acc_stdevs = agent.eval_split('Test', test_loader, verbose=True)
-    accuracy_fpath = os.path.join(analysis_dir, f'{checkpoint_name}_accuracies.csv')
-    np.savetxt(accuracy_fpath, np.array(accuracies), delimiter=",")
     print(acc_stdevs)
 
     checkpoint_name = args.checkpoint_file.replace('.pth.tar', '')
+    accuracy_fpath = os.path.join(analysis_dir, f'{checkpoint_name}_accuracies.csv')
+    np.savetxt(accuracy_fpath, np.array(accuracies), delimiter=",")
+
     out_file = os.path.join(analysis_dir, f'{checkpoint_name}_eval.npz')
     np.savez(out_file, mean_acc=acc_means, stdev_acc=acc_stdevs)
 
