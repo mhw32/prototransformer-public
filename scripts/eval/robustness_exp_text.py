@@ -62,9 +62,6 @@ def evaluate(args, gpu_device=-1):
     accuracy_fpath = os.path.join(analysis_dir, f'{checkpoint_name}_accuracies.csv')
     np.savetxt(accuracy_fpath, np.array(accuracies), delimiter=",")
 
-    out_file = os.path.join(analysis_dir, f'{checkpoint_name}_eval.npz')
-    np.savez(out_file, mean_acc=acc_means, stdev_acc=acc_stdevs)
-
 
 if __name__ == "__main__":
     import argparse
