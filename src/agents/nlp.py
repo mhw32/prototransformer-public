@@ -203,9 +203,9 @@ class BaseNLPMetaAgent(BaseAgent):
                 break
 
             # Decay the shot
-            if self.shot_decay:
-                if epoch % self.decay_every == self.decay_every - 1:
-                    self.n_shots -= self.decay_by
+            if self.config.dataset.train.shot_mode == "step_decay":
+                if epoch % self.config.dataset.train.decay_every == self.config.dataset.train.decay_every - 1:
+                    self.config.dataset.train.n_shots -= self.config.dataset.train.decay_by
 
     def save_metrics(self):
         out_dict = {
