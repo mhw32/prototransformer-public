@@ -11,7 +11,7 @@
         "data_root": "config/nlp/text/data_root/data/huffpost.json",
         "train": {
             "n_ways": 5,
-            "n_shots": 15,
+            "n_shots": 12,
             "n_queries": 3,
             "smlmt_tasks_factor": 0,
             "shot_mode": "step_decay",
