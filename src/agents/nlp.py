@@ -411,6 +411,8 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         with torch.no_grad():
             for batch in loader:
                 n_shots = self.config.dataset.train.n_shots
+                if self.shot_mode == "step_decay":
+                    n_shots = self.config.dataset.test.n_shots
                 n_queries = self.config.dataset.test.n_queries
                 loss, acc, _ = self.forward(batch, n_shots, n_queries)
                 task_type = batch['task_type'].cpu().numpy()
