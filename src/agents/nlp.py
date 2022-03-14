@@ -84,7 +84,6 @@ class BaseNLPMetaAgent(BaseAgent):
                 'fs_fewrel': FewShotFewRel,
             }
             DatasetClass = class_dict[self.config.dataset.name]
-            print("IN _load_datasets, ABOUT TO INITIALIZE DATASET")
             self.train_dataset = DatasetClass(
                 data_root=self.config.dataset.data_root,
                 n_ways=self.config.dataset.train.n_ways,

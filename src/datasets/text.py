@@ -60,7 +60,6 @@ class BaseFewShotTextDataset(Dataset):
 
         print('loading data...')
         data, self.classes = self.load_data()
-        print(F"FOR split = {split}, LENGTH OF SELF.CLASSES IS: ", len(self.classes))
         # NOTE: no side information since we don't have anything special
         # NOTE: no smlmt for simplicitly
         self.tokens, self.masks, self.labels = self.process_data(data)
