@@ -209,7 +209,6 @@ class BaseNLPMetaAgent(BaseAgent):
                     self.config.dataset.train.n_shots -= self.config.dataset.train.decay_by
                     print("new value is ", self.config.dataset.train.n_shots)
                     self.train_dataset.update_n_shots(self.config.dataset.train.n_shots)
-                    self.test_dataset.update_n_shots(self.config.dataset.train.n_shots)
 
     def save_metrics(self):
         out_dict = {
