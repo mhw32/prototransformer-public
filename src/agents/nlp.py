@@ -310,7 +310,6 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         query_labs = batch['query_labs'].to(self.device)
 
         batch_size = support_toks.size(0)
-        print("BATCH SIZE: ", batch_size)
         n_ways = support_toks.size(1)
         seq_len = support_toks.size(-1)
 
