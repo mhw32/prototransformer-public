@@ -204,8 +204,10 @@ class BaseNLPMetaAgent(BaseAgent):
 
             # Decay the shot
             if self.shot_mode == "step_decay":
+                print("decaying")
                 if epoch % self.config.dataset.train.decay_every == self.config.dataset.train.decay_every - 1:
                     self.config.dataset.train.n_shots -= self.config.dataset.train.decay_by
+                    print("new value is ", self.config.dataset.train.n_shots)
                     self.train_dataset.update_n_shots(self.config.dataset.train.n_shots)
                     self.test_dataset.update_n_shots(self.config.dataset.train.n_shots)
 

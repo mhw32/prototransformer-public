@@ -1,6 +1,6 @@
 {
     "exp_base": "./config/nlp/text/exp_dir/<DATE>",
-    "exp_name": "amazon_5shot_proto_transformer",
+    "exp_name": "amazon_sd_3_1_base",
     "agent": "NLPPrototypeNetAgent",
     "cuda": true,
     "gpu_device": 8,
