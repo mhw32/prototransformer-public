@@ -355,8 +355,9 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         return loss, top1, logprobas
 
     def train_one_epoch(self):
-        tqdm_batch = tqdm(total=len(self.train_loader),
-                          desc="[Epoch {}]".format(self.current_epoch))
+        if not self.config.fasrc:
+            tqdm_batch = tqdm(total=len(self.train_loader),
+                              desc="[Epoch {}]".format(self.current_epoch))
         self.model.train()
         loss_meter = utils.AverageMeter()
         all_task_types = range(2)
@@ -383,9 +384,11 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
                         acc_meters[t_].update(acc[task_type == t].mean())
                         postfix[f"Acc{t}"] = acc_meters[t_].avg
                 self.current_iteration += 1
-            tqdm_batch.set_postfix(postfix)
-            tqdm_batch.update()
-        tqdm_batch.close()
+            if not self.config.fasrc:
+                tqdm_batch.set_postfix(postfix)
+                tqdm_batch.update()
+        if not self.config.fasrc:
+            tqdm_batch.close()
 
         self.current_loss = loss_meter.avg
         self.train_loss.append(loss_meter.avg)
@@ -397,7 +400,8 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         return f'Meta-Train Tasks: {accuracies}'
 
     def eval_split(self, name, loader, verbose=False):
-        tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
+        if not self.config.fasrc:
+            tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
         self.model.eval()
         loss_meter = utils.AverageMeter()
         all_task_types = range(2)
@@ -424,8 +428,10 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
                         acc_stores[t_].append(acc[task_type == t].mean())
                         if verbose:
                             accuracies[t_].append(acc[task_type == t])
-                tqdm_batch.update()
-            tqdm_batch.close()
+                if not self.config.fasrc:
+                    tqdm_batch.update()
+            if not self.config.fasrc:
+                tqdm_batch.close()
 
         if not verbose:
             accuracies = [acc_meters[t].avg for t in all_task_types]
@@ -676,8 +682,9 @@ class BaseNLPSupAgent(BaseAgent):
         return loss, acc, probas
 
     def train_one_epoch(self):
-        tqdm_batch = tqdm(total=len(self.train_loader),
-                          desc="[Epoch {}]".format(self.current_epoch))
+        if not self.config.fasrc:
+            tqdm_batch = tqdm(total=len(self.train_loader),
+                              desc="[Epoch {}]".format(self.current_epoch))
         self.model.train()
         loss_meter = utils.AverageMeter()
         acc_meter = utils.AverageMeter()
@@ -694,9 +701,12 @@ class BaseNLPSupAgent(BaseAgent):
                 acc_meter.update(acc)
                 postfix = {"Loss": loss_meter.avg, "Acc": acc_meter.avg}
                 self.current_iteration += 1
-                tqdm_batch.set_postfix(postfix)
-            tqdm_batch.update()
-        tqdm_batch.close()
+                if not self.config.fasrc:
+                    tqdm_batch.set_postfix(postfix)
+            if not self.config.fasrc:
+                tqdm_batch.update()
+        if not self.config.fasrc:
+            tqdm_batch.close()
 
         self.current_loss = loss_meter.avg
         self.train_loss.append(loss_meter.avg)
@@ -704,7 +714,8 @@ class BaseNLPSupAgent(BaseAgent):
         self.train_acc.append(acc_meter.avg)
 
     def eval_split(self, name, loader):
-        tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
+        if not self.config.fasrc:
+            tqdm_batch = tqdm(total=len(loader), desc=f"[{name}]")
         self.model.eval()
         loss_meter = utils.AverageMeter()
         acc_meter = utils.AverageMeter()
@@ -715,9 +726,11 @@ class BaseNLPSupAgent(BaseAgent):
                 loss_meter.update(loss.item())
                 acc_meter.update(acc)
                 postfix = {"Loss": loss_meter.avg, "Acc": acc_meter.avg}
-                tqdm_batch.set_postfix(postfix)
-                tqdm_batch.update()
-            tqdm_batch.close()
+                if not self.config.fasrc:
+                    tqdm_batch.set_postfix(postfix)
+                    tqdm_batch.update()
+            if not self.config.fasrc:
+                tqdm_batch.close()
 
         return loss_meter.avg, acc_meter.avg
 

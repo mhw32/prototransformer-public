@@ -6,6 +6,7 @@
     "gpu_device": 8,
     "seed": 42,
     "data_loader_workers": 4,
+    "fasrc": true,
     "dataset": {
         "name": "fs_huffpost",
         "data_root": "config/nlp/text/data_root/data/huffpost.json",
