@@ -14,7 +14,7 @@ class BaseAgent(object):
         self.logger = logging.getLogger("Agent")
         self.log_path = os.path.join(config.log_dir, "log.txt")
         self.shot_mode = self.config.dataset.train.shot_mode if isinstance(self.config.dataset.train.shot_mode, str) else None
-        self.wi_mode = sel.config.dataset.train.ways_mode if isinstance(self.config.dataset.train.ways_mode, str) else None
+        self.wi_mode = self.config.dataset.train.ways_mode if isinstance(self.config.dataset.train.ways_mode, str) else None
 
         self._set_seed()  # set seed as early as possible
 
@@ -149,6 +149,12 @@ class BaseAgent(object):
                 break
 
             # increase the number of ways on a patience-based system
+            print(f"self.wi_mode: {self.wi_mode}")
+            print(f"self.iter_with_no_improve_since_wi: {self.iter_with_no_improv_since_wi}")
+            print(f"self.config.dataset.train.ways_patience: {self.config.dataset.train.ways_patience}")
+            print(f"self.best_val_metric_since_wi: {self.best_val_metric_since_wi}")
+            print(f"self.config.dataset.train.n_ways: {self.config.dataset.train.n_ways}")
+            print(f"self.config.dataset.train.max_ways: {self.config.dataset.train.max_ways}")
             if self.wi_mode == "patience":
                 if self.iter_with_no_improv_since_wi > self.config.dataset.train.ways_patience:
                     self.iter_with_no_improv_since_wi = 0
