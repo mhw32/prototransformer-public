@@ -14,7 +14,7 @@ class BaseAgent(object):
         self.logger = logging.getLogger("Agent")
         self.log_path = os.path.join(config.log_dir, "log.txt")
         self.shot_mode = self.config.dataset.train.shot_mode if isinstance(self.config.dataset.train.shot_mode, str) else None
-        self.wi_mode = sel.config.dataset.train.ways_mode if isinstance(self.config.dataset.train.ways_mode, str) else None
+        self.wi_mode = self.config.dataset.train.ways_mode if isinstance(self.config.dataset.train.ways_mode, str) else None
 
         self._set_seed()  # set seed as early as possible
 
