@@ -14,6 +14,7 @@ class BaseAgent(object):
         self.logger = logging.getLogger("Agent")
         self.log_path = os.path.join(config.log_dir, "log.txt")
         self.shot_mode = self.config.dataset.train.shot_mode if isinstance(self.config.dataset.train.shot_mode, str) else None
+        self.wi_mode = sel.config.dataset.train.ways_mode if isinstance(self.config.dataset.train.ways_mode, str) else None
 
         self._set_seed()  # set seed as early as possible
 
@@ -33,7 +34,12 @@ class BaseAgent(object):
         self.current_val_metric = 0
         self.best_val_metric = 0
         self.iter_with_no_improv = 0
-        self._iter_with_no_improv_since_wi = 0
+        # These are or WI patience
+        self.best_val_metric_since_wi = 0
+        self.iter_with_no_improv_since_wi = 0
+        # These are for SD patience
+        self.best_val_metric_since_sd = 0
+        self.iter_with_no_improv_since_sd = 0
 
     def _set_seed(self):
         torch.manual_seed(self.config.seed)
@@ -143,13 +149,25 @@ class BaseAgent(object):
                 break
 
             # increase the number of ways on a patience-based system
-            if self.ways_mode == "patience":
-                if self._iter_with_no_improv_since_wi > self.config.dataset.train.ways_patience:
+            if self.wi_mode == "patience":
+                if self.iter_with_no_improv_since_wi > self.config.dataset.train.ways_patience:
+                    self.iter_with_no_improv_since_wi = 0
                     if self.config.dataset.train.n_ways < self.config.dataset.train.max_ways:
                         self.config.dataset.train.n_ways = min(self.config.dataset.train.max_ways,
                                                                self.config.dataset.train.n_ways +
-                                                               self.config.dataset.ways_inc_by)
+                                                               self.config.dataset.train.ways_inc_by)
                         self.train_dataset.update_n_ways(self.config.dataset.train.n_ways)
+
+            # decrease the number of shots on a patience-based system
+            if self.shot_mode == "patience":
+                if self.iter_with_no_improv_since_sd > self.config.dataset.train.sd_patience:
+                    self.iter_with_no_improv_since_sd = 0
+                    if self.config.dataset.n_shots > self.config.dataset.train.min_shots:
+                        self.config.dataset.n_shots = max(self.config.dataset.min_shots,
+                                                          self.config.dataset.n_shots -
+                                                          self.config.dataset.decay_by)
+                best_val_metric_since_sd = 0
+        self.iter_with_no_improv_since_sd
 
     def train_one_epoch(self):
         """

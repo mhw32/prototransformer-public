@@ -203,10 +203,10 @@ class BaseNLPMetaAgent(BaseAgent):
 
             # Decay the shot
             if self.shot_mode == "step_decay":
-                print("decaying")
                 if epoch % self.config.dataset.train.decay_every == self.config.dataset.train.decay_every - 1:
-                    self.config.dataset.train.n_shots -= self.config.dataset.train.decay_by
-                    print("new value is ", self.config.dataset.train.n_shots)
+                    self.config.dataset.train.n_shots = max(self.config.dataset.train.min_shots,
+                                                            self.config.dataset.train.n_shots -
+                                                            self.config.dataset.train.decay_by)
                     self.train_dataset.update_n_shots(self.config.dataset.train.n_shots)
 
     def save_metrics(self):
@@ -747,6 +747,20 @@ class BaseNLPSupAgent(BaseAgent):
             self.iter_with_no_improv = 0
         else:
             self.iter_with_no_improv += 1
+
+        # Patience for WI
+        if self.current_val_metric >= self.best_val_metric_since_wi:
+            self.best_val_metric_since_wi = self.current_val_metric
+            self.iter_with_no_improv_since_wi = 0
+        else:
+            self.iter_with_no_improv_since_wi += 1
+
+        # Patience for SD
+        if self.current_val_metric >= self.best_val_metric_since_sd:
+            self.best_val_metric_since_sd = self.current_val_metric
+            self.iter_with_no_improv_since_sd = 0
+        else:
+            self.iter_with_no_improv_since_sd += 1
 
     def train(self):
         for epoch in range(self.current_epoch, self.config.optim.num_epochs):
