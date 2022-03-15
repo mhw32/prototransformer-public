@@ -148,28 +148,6 @@ class BaseAgent(object):
                 # self.logger.info("Exceeded patience. Stop training...")
                 break
 
-            # increase the number of ways on a patience-based system
-            if self.wi_mode == "patience":
-                if self.iter_with_no_improv_since_wi > self.config.dataset.train.ways_patience:
-                    self.iter_with_no_improv_since_wi = 0
-                    self.best_val_metric_since_wi = 0
-                    if self.config.dataset.train.n_ways < self.config.dataset.train.max_ways:
-                        self.config.dataset.train.n_ways = min(self.config.dataset.train.max_ways,
-                                                               self.config.dataset.train.n_ways +
-                                                               self.config.dataset.train.ways_inc_by)
-                        self.train_dataset.update_n_ways(self.config.dataset.train.n_ways)
-
-            # decrease the number of shots on a patience-based system
-            if self.shot_mode == "patience":
-                if self.iter_with_no_improv_since_sd > self.config.dataset.train.sd_patience:
-                    self.iter_with_no_improv_since_sd = 0
-                    self.best_val_metric_since_sd = 0
-                    if self.config.dataset.train.n_shots > self.config.dataset.train.min_shots:
-                        self.config.dataset.train.n_shots = max(self.config.dataset.train.min_shots,
-                                                          self.config.dataset.train.n_shots -
-                                                          self.config.dataset.train.decay_by)
-                        self.train_dataset.update_n_shots(self.config.dataset.train.n_shots)
-
     def train_one_epoch(self):
         """
         One epoch of training
