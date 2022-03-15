@@ -13,7 +13,11 @@
             "n_ways": 5,
             "n_shots": 3,
             "n_queries": 3,
-            "smlmt_tasks_factor": 0
+            "smlmt_tasks_factor": 0,
+            "ways_mode": "patience",
+            "ways_inc_by": 1,
+            "ways_patience": 15,
+            "max_ways": 10
         },
         "test": {
             "n_ways": 5,

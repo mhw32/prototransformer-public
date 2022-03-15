@@ -33,6 +33,7 @@ class BaseAgent(object):
         self.current_val_metric = 0
         self.best_val_metric = 0
         self.iter_with_no_improv = 0
+        self._iter_with_no_improv_since_wi = 0
 
     def _set_seed(self):
         torch.manual_seed(self.config.seed)
@@ -140,6 +141,15 @@ class BaseAgent(object):
             if self.iter_with_no_improv > self.config.optim.patience:
                 # self.logger.info("Exceeded patience. Stop training...")
                 break
+
+            # increase the number of ways on a patience-based system
+            if self.ways_mode == "patience":
+                if self._iter_with_no_improv_since_wi > self.config.dataset.train.ways_patience:
+                    if self.config.dataset.train.n_ways < self.config.dataset.train.max_ways:
+                        self.config.dataset.train.n_ways = min(self.config.dataset.train.max_ways,
+                                                               self.config.dataset.train.n_ways +
+                                                               self.config.dataset.ways_inc_by)
+                        self.train_dataset.update_n_ways(self.config.dataset.train.n_ways)
 
     def train_one_epoch(self):
         """

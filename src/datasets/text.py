@@ -66,7 +66,11 @@ class BaseFewShotTextDataset(Dataset):
 
     def update_n_shots(self, new_shots):
         self.n_shots = new_shots
-        print("UPDATED VALUE: ", self.n_shots)
+        print("UPDATED SHOT VALUE: ", self.n_shots)
+
+    def update_n_ways(self, new_ways):
+        self.n_ways = new_ways
+        print("UPDATED WAYS: ", self.n_ways)
 
     def make_classes(self):
         raise NotImplementedError
