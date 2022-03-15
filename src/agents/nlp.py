@@ -484,6 +484,21 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
             self.iter_with_no_improv = 0
         else:
             self.iter_with_no_improv += 1
+
+        # Patience for WI
+        if self.current_val_metric >= self.best_val_metric_since_wi:
+            self.best_val_metric_since_wi = self.current_val_metric
+            self.iter_with_no_improv_since_wi = 0
+        else:
+            self.iter_with_no_improv_since_wi += 1
+
+        # Patience for SD
+        if self.current_val_metric >= self.best_val_metric_since_sd:
+            self.best_val_metric_since_sd = self.current_val_metric
+            self.iter_with_no_improv_since_sd = 0
+        else:
+            self.iter_with_no_improv_since_sd += 1
+
         return f'Meta-Val Tasks: {acc_means}'
 
 
@@ -775,20 +790,6 @@ class BaseNLPSupAgent(BaseAgent):
             self.iter_with_no_improv = 0
         else:
             self.iter_with_no_improv += 1
-
-        # Patience for WI
-        if self.current_val_metric >= self.best_val_metric_since_wi:
-            self.best_val_metric_since_wi = self.current_val_metric
-            self.iter_with_no_improv_since_wi = 0
-        else:
-            self.iter_with_no_improv_since_wi += 1
-
-        # Patience for SD
-        if self.current_val_metric >= self.best_val_metric_since_sd:
-            self.best_val_metric_since_sd = self.current_val_metric
-            self.iter_with_no_improv_since_sd = 0
-        else:
-            self.iter_with_no_improv_since_sd += 1
 
     def train(self):
         for epoch in range(self.current_epoch, self.config.optim.num_epochs):
