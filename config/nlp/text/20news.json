@@ -11,20 +11,20 @@
         "data_root": "./config/nlp/text/data_root/data/20news.json",
         "train": {
             "n_ways": 5,
-            "n_shots": 5,
-            "n_queries": 5,
-            "smlmt_tasks_factor": 0.1
+            "n_shots": 3,
+            "n_queries": 3,
+            "smlmt_tasks_factor": 0
         },
         "test": {
             "n_ways": 5,
-            "n_shots": 5,
-            "n_queries": 5
+            "n_shots": 3,
+            "n_queries": 3
         }
     },
     "optim": {
         "batch_size": 1,
         "learning_rate": 1e-4,
-        "weight_decay": 0.01,
+        "weight_decay": 0,
         "patience": 1000,
         "num_epochs": 200,
         "warmup_steps": 10000,

@@ -18,7 +18,7 @@
         "test": {
             "n_ways": 5,
             "n_shots": 3,
-            "n_queries": 5
+            "n_queries": 3
         }
     },
     "optim": {
