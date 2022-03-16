@@ -23,7 +23,7 @@ class BaseAgent(object):
         if self.pdo_method == "downsample":
             def sampling_method(difficulty_matrix, categories):
                 miss_prob = 0
-                for idx, first_category in categories:
+                for first_category in categories:
                     single_miss_prob = 0
                     for second_category in categories:
                         if first_category != second_category:
