@@ -28,7 +28,7 @@ class BaseAgent(object):
                         if first_category != second_category:
                             single_miss_prob += (1 - single_miss_prob) * difficulty_matrix[first_category - 1][second_category - 1]
                     miss_prob += single_miss_prob
-                return np.random.uniform < (miss_prob / len(categories))
+                return np.random.uniform() < (miss_prob / len(categories))
 
             self.sampling_method = sampling_method
         else:
