@@ -85,7 +85,7 @@ class BaseFewShotTextDataset(Dataset):
     def set_difficulty_matrix(self, difficulty_matrix):
         self.difficulty_matrix = difficulty_matrix
 
-    def current_categories(self):
+    def get_current_categories(self):
         return self.current_categories
 
     def make_classes(self):
