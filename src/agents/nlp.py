@@ -342,9 +342,8 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         loss = -logprobas.gather(3, query_targets.unsqueeze(3)).squeeze()
         loss = loss.view(-1).mean()
 
-        print(self.pdo_method)
         if self.pdo_method:
-            update_sampling_matrix(loss)
+            self.update_sampling_matrix(loss)
 
         acc = utils.get_accuracy(logprobas.view(batch_size, nway*nquery, -1),
                                  query_targets.view(batch_size, nway*nquery))
