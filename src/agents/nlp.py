@@ -324,14 +324,18 @@ class BaseNLPMetaAgent(BaseAgent):
 
 class NLPPrototypeNetAgent(BaseNLPMetaAgent):
 
-    def update_sampling_matrix(self, loss, logprobas, target):
+    def update_sampling_matrix(self, loss, logprobas, targets, categories):
         """Computes the accuracy over the k top predictions for the specified values of k"""
         # output: batch_size x n*m x n
         # target: batch_size x n*m
 
-        print(loss)
-        print(logprobas)
-        print(target)
+        for way_num in range(nway):
+            for query_num in range(nquery):
+                idx = way_num * nquery + query_num
+                target = targets[0][idx]
+                pred = torch.exp(x[0][0][idx][target])
+                ema_alpha = 1 / (1 + self.current_epoch)
+                self.difficulty_matrix = (1 - ema_alpha) * self.difficulty_matrix + ema_alpha * (1 - pred)
 
     def compute_loss(self, support_features, support_targets, query_features, query_targets):
         batch_size, nway, nquery, dim = query_features.size()
@@ -345,7 +349,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         loss = loss.view(-1).mean()
 
         if self.pdo_method:
-            self.update_sampling_matrix(loss, logprobas.view(batch_size, nway*nquery, -1), query_targets.view(batch_size, nway*nquery))
+            self.update_sampling_matrix(loss, logprobas.view(batch_size, nway*nquery, -1), query_targets.view(batch_size, nway*nquery), nway, nquery)
 
         acc = utils.get_accuracy(logprobas.view(batch_size, nway*nquery, -1),
                                  query_targets.view(batch_size, nway*nquery))
