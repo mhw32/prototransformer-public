@@ -106,6 +106,7 @@ class BaseNLPMetaAgent(BaseAgent):
                 n_shots=self.config.dataset.train.n_shots,
                 n_queries=self.config.dataset.train.n_queries,
                 split='train',
+                sampling_method=self.sampling_method,
             )
             # validation (test is not used here)
             self.test_dataset = DatasetClass(
@@ -114,6 +115,7 @@ class BaseNLPMetaAgent(BaseAgent):
                 n_shots=self.config.dataset.test.n_shots,
                 n_queries=self.config.dataset.test.n_queries,
                 split='val',
+                sampling_method=self.sampling_method,
             )
         else:
             raise Exception(f'Dataset {self.config.dataset.name} not supported.')

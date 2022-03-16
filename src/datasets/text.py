@@ -37,7 +37,6 @@ class BaseFewShotTextDataset(Dataset):
             roberta_device='cpu',
             fix_seed=42,
             sampling_method=None,
-            difficulty_matrix=None,
         ):
         super().__init__()
 
