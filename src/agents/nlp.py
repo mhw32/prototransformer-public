@@ -324,7 +324,7 @@ class BaseNLPMetaAgent(BaseAgent):
 
 class NLPPrototypeNetAgent(BaseNLPMetaAgent):
 
-    def update_sampling_matrix(loss):
+    def update_sampling_matrix(self, loss):
         """Computes the accuracy over the k top predictions for the specified values of k"""
         # output: batch_size x n*m x n
         # target: batch_size x n*m
