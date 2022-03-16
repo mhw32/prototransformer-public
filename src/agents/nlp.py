@@ -39,22 +39,6 @@ class BaseNLPMetaAgent(BaseAgent):
         self.test_acc = []
         self.test_acc_stdevs = []
         self.temp = []
-        print("config pdo method: ", self.config.dataset.train.pdo_method)
-        print("PDO METHOD IS: ", self.pdo_method)
-        if self.pdo_method == "downsample":
-            def sampling_method(difficulty_matrix, categories):
-                miss_prob = 0
-                for idx, first_category in categories:
-                    single_miss_prob = 0
-                    for second_category in categories:
-                        if first_category != second_category:
-                            single_miss_prob += (1 - single_miss_prob) * difficulty_matrix[first_category][second_category]
-                    miss_prob += single_miss_prob
-                return np.random.uniform < (miss_prob / len(categories))
-
-            self.sampling_method = sampling_method
-        else:
-            self.sampling_method = None
 
     def _load_datasets(self):
         if self.config.dataset.name == 'newsgroup':
