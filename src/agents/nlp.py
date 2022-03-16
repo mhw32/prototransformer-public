@@ -335,7 +335,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
                 print(self.current_categories)
                 generating_category = self.current_categories[target]
                 ema_alpha = 1 / (1 + self.current_epoch)
-                for predicted in set(targets):
+                for predicted in set(targets[0]):
                     if predicted != target:
                         mispred_prob = torch.exp(x[0][0][idx][predicted])
                         predicted_category = self.current_categories[predicted]
