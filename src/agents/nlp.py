@@ -325,7 +325,7 @@ class BaseNLPMetaAgent(BaseAgent):
 
 class NLPPrototypeNetAgent(BaseNLPMetaAgent):
 
-    def update_sampling_matrix(self, logprobas, targets, categories, nway, nquery):
+    def update_sampling_matrix(self, logprobas, targets, nway, nquery):
         """Updates the probabilities of """
 
         for way_num in range(nway):
@@ -339,6 +339,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
                         mispred_prob = torch.exp(x[0][0][idx][predicted])
                         predicted_category = self.current_categories[predicted]
                         self.difficulty_matrix[generating_category][target_category] = (1 - ema_alpha) * self.difficulty_matrix[generating_category][target_category] + ema_alpha * mispred_prob
+        self.train_dataset.set_difficulty_matrix(self.difficulty_matrix)
 
     def compute_loss(self, support_features, support_targets, query_features, query_targets):
         batch_size, nway, nquery, dim = query_features.size()
