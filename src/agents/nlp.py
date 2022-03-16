@@ -106,7 +106,15 @@ class BaseNLPMetaAgent(BaseAgent):
 
         # For PDO
         self.train_dataset.update_sampling(True) # DELETE THIS IT'S JUST FOR TESTING
-        self.difficulty_matrix = np.ones((len(self.train_dataset.classes), len(self.train_dataset.classes))) * 0.5
+
+        # Create a category converter (since category numbers are not even)
+        category_converter = {}
+        category_idx = 0
+        for class_num in self.train_dataset.classes:
+            category_converter[class_num] = category_idx
+            category_idx += 1
+        self.category_converter = category_converter
+        self.difficulty_matrix = np.ones((len(self.category_converter), len(self.category_converter))) * 0.5
         self.train_dataset.set_difficulty_matrix(self.difficulty_matrix)
 
     def _load_loaders(self):
