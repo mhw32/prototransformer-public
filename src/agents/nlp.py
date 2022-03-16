@@ -222,11 +222,6 @@ class BaseNLPMetaAgent(BaseAgent):
                 break
 
             # increase the number of ways on a patience-based system
-            print(f"self.wi_mode; {self.wi_mode}")
-            print(f"self.iter_with_no_improv_since_wi: {self.iter_with_no_improv_since_wi}")
-            print(f"self.config.dataset.train.ways_patience: {self.config.dataset.train.ways_patience}")
-            print(f"self.config.dataset.train.n_ways: {self.config.dataset.train.n_ways}")
-            print(f"self.config.dataset.train.max_ways: {self.config.dataset.train.max_ways}")
             if self.wi_mode == "patience":
                 if self.iter_with_no_improv_since_wi > self.config.dataset.train.ways_patience:
                     self.iter_with_no_improv_since_wi = 0
@@ -347,6 +342,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         loss = -logprobas.gather(3, query_targets.unsqueeze(3)).squeeze()
         loss = loss.view(-1).mean()
 
+        print(self.pdo_method)
         if self.pdo_method:
             update_sampling_matrix(loss)
 
