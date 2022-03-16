@@ -17,7 +17,7 @@ class BaseAgent(object):
         self.shot_mode = self.config.dataset.train.shot_mode if isinstance(self.config.dataset.train.shot_mode, str) else None
         self.wi_mode = self.config.dataset.train.ways_mode if isinstance(self.config.dataset.train.ways_mode, str) else None
         self.dropout = self.config.model.hidden_dropout_prob if len(self.config.model.hidden_dropout_prob) else None
-        self.pdo_method = self.config.dataset.train.pdo_method if len(self.config.dataset.train.pdo_method) else None
+        self.pdo_method = self.config.dataset.train.pdo_method if isinstance(self.config.dataset.train.pdo_method, float) else None
 
         self._set_seed()  # set seed as early as possible
 
