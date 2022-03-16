@@ -324,18 +324,21 @@ class BaseNLPMetaAgent(BaseAgent):
 
 class NLPPrototypeNetAgent(BaseNLPMetaAgent):
 
-    def update_sampling_matrix(self, loss, logprobas, targets, categories):
-        """Computes the accuracy over the k top predictions for the specified values of k"""
-        # output: batch_size x n*m x n
-        # target: batch_size x n*m
+    def update_sampling_matrix(self, logprobas, targets, categories, nway, nquery):
+        """Updates the probabilities of """
 
         for way_num in range(nway):
             for query_num in range(nquery):
                 idx = way_num * nquery + query_num
                 target = targets[0][idx]
-                pred = torch.exp(x[0][0][idx][target])
+                generating_category = self.current_categories[target]
                 ema_alpha = 1 / (1 + self.current_epoch)
-                self.difficulty_matrix = (1 - ema_alpha) * self.difficulty_matrix + ema_alpha * (1 - pred)
+                for predicted in set(targets):
+                    if predicted != target:
+                        mispred_prob = torch.exp(x[0][0][idx][predicted])
+                        predicted_category = self.current_categories[predicted]
+                        self.difficulty_matrix[generating_category][target_category] = (1 - ema_alpha) * self.difficulty_matrix[generating_category][target_category]
+                                                                                       + ema_alpha * mispred_prob
 
     def compute_loss(self, support_features, support_targets, query_features, query_targets):
         batch_size, nway, nquery, dim = query_features.size()
@@ -349,7 +352,9 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         loss = loss.view(-1).mean()
 
         if self.pdo_method:
-            self.update_sampling_matrix(loss, logprobas.view(batch_size, nway*nquery, -1), query_targets.view(batch_size, nway*nquery), nway, nquery)
+            self.update_sampling_matrix(logprobas.view(batch_size, nway*nquery, -1),
+                                        query_targets.view(batch_size, nway*nquery),
+                                        nway, nquery)
 
         acc = utils.get_accuracy(logprobas.view(batch_size, nway*nquery, -1),
                                  query_targets.view(batch_size, nway*nquery))
@@ -428,6 +433,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         acc_meters = [utils.AverageMeter() for _ in all_task_types]
 
         for batch in self.train_loader:
+            self.current_categories = self.train_loader.current_categories
             n_shots = self.config.dataset.train.n_shots
             n_queries = self.config.dataset.train.n_queries
             loss, acc, _ = self.forward(batch, n_shots, n_queries)

@@ -187,8 +187,11 @@ class BaseFewShotTextDataset(Dataset):
                 categories = self.rs.choice(self.classes, size=self.n_ways, replace=False)
                 if self.sampling_method(self.difficulty_matrix, categories):
                     break
+                # Need this to communicate the categories upward for fixing the difficutly matrix
+                self.current_categories = categories
         else:
             categories = self.rs.choice(self.classes, size=self.n_ways, replace=False)
+
         task_tokens = []
         task_masks  = []
         task_labels = []
