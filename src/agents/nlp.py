@@ -328,7 +328,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
                     if predicted != target:
                         mispred_prob = torch.exp(logprobas[0][idx][predicted])
                         predicted_category = self.current_categories[0][predicted]
-                        self.difficulty_matrix[generating_category][predicted_category] = (1 - ema_alpha) * self.difficulty_matrix[generating_category][predicted_category] + ema_alpha * mispred_prob
+                        self.difficulty_matrix[generating_category - 1][predicted_category - 1] = (1 - ema_alpha) * self.difficulty_matrix[generating_category - 1][predicted_category - 1] + ema_alpha * mispred_prob
         self.train_dataset.set_difficulty_matrix(self.difficulty_matrix)
 
     def compute_loss(self, support_features, support_targets, query_features, query_targets):
