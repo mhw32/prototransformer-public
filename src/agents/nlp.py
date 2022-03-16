@@ -6,6 +6,7 @@ from itertools import chain
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import time
 from transformers import (
     RobertaConfig,
     RobertaModel,
@@ -317,7 +318,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
 
     def update_sampling_matrix(self, logprobas, targets, nway, nquery):
         """Updates the the difficulty matrix"""
-        print("starting update_sampling_matrix")
+        start = time.time()
 
         # No For loops
         probas = torch.exp(logprobas)
@@ -347,7 +348,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         self.difficulty_matrix += intermediate_update_val
 
         # NOTE: ADD SELF TO current_categories and difficulty_matrix
-        print("ending update_sampling_matrix")
+        print(f"ending update_sampling_matrix: {time.time() - start}")
 
     def compute_loss(self, support_features, support_targets, query_features, query_targets):
         batch_size, nway, nquery, dim = query_features.size()
