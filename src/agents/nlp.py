@@ -318,6 +318,11 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
     def update_sampling_matrix(self, logprobas, targets, nway, nquery):
         """Updates the probabilities of """
 
+        print(logprobas)
+        print(targets)
+        print(self.difficulty_matrix)
+        print(nway, nquery)
+
         for idx in range(nway * nquery):
             target = targets[0][idx]
             generating_category = self.current_categories[0][target]
