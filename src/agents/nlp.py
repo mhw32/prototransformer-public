@@ -436,7 +436,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
 
         for batch in self.train_loader:
             # Getting categories for difficulty_matrix update
-            self.current_categories = self.train_dataset.current_categories()
+            self.current_categories = self.train_dataset.get_current_categories()
 
             n_shots = self.config.dataset.train.n_shots
             n_queries = self.config.dataset.train.n_queries
