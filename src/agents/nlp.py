@@ -115,7 +115,11 @@ class BaseNLPMetaAgent(BaseAgent):
 
     def _create_model(self):
         if self.config.model.name == 'roberta':
-            model = RobertaModel.from_pretrained(self.config.model.config, is_tam=self.config.model.task_tam)
+            if self.dropout:
+                model = RobertaModel.from_pretrained(self.config.model.config, is_tam=self.config.model.task_tam, hidden_dropout_prob=self.dropout)
+            else:
+                model = RobertaModel.from_pretrained(self.config.model.config, is_tam=self.config.model.task_tam)
+            print(model.config.hidden_dropout_prob)
             utils.reset_model_for_training(model)
 
             if self.config.model.finetune:
