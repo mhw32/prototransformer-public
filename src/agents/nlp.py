@@ -39,6 +39,19 @@ class BaseNLPMetaAgent(BaseAgent):
         self.test_acc = []
         self.test_acc_stdevs = []
         self.temp = []
+        if self.config.dataset.train.pdo_method == "downsample":
+            def sampling_method(difficulty_matrix, categories):
+                miss_prob = 0
+                for idx, first_category in enuemrate(categories):
+                    single_miss_prob = 0
+                    for second_category in categories:
+                        single_miss_prob += (1 - single_miss_prob) * difficulty_matrix[first_category, second_category]
+                    miss_prob += single_miss_prob
+                return np.random.uniform < (miss_prob / len(categories))
+
+            self.sampling_method = sampling_method
+        else:
+            self.sampling_method = None
 
     def _load_datasets(self):
         if self.config.dataset.name == 'newsgroup':
@@ -101,6 +114,9 @@ class BaseNLPMetaAgent(BaseAgent):
             )
         else:
             raise Exception(f'Dataset {self.config.dataset.name} not supported.')
+
+        # For PDO
+        self.difficulty_matrix = np.ones((len(self.train_dataset.classes), len(self.train_dataset.classes))) * 0.5
 
     def _load_loaders(self):
         self.train_loader, self.train_len = self._create_dataloader(
@@ -236,6 +252,11 @@ class BaseNLPMetaAgent(BaseAgent):
                                                             self.config.dataset.train.decay_by)
                     self.train_dataset.update_n_shots(self.config.dataset.train.n_shots)
 
+            # Start PDO on a patience-based system
+            if self.pdo_method:
+                if self.iter_with_no_improv > self.config.dataset.train.pdo_patience:
+                    self.train_datset.update_sampling(True)
+
 
     def save_metrics(self):
         out_dict = {
@@ -304,6 +325,13 @@ class BaseNLPMetaAgent(BaseAgent):
 
 class NLPPrototypeNetAgent(BaseNLPMetaAgent):
 
+    def update_samling_matrix(loss):
+        """Computes the accuracy over the k top predictions for the specified values of k"""
+        # output: batch_size x n*m x n
+        # target: batch_size x n*m
+
+        print(loss)
+
     def compute_loss(self, support_features, support_targets, query_features, query_targets):
         batch_size, nway, nquery, dim = query_features.size()
         prototypes = torch.mean(support_features, dim=2)
@@ -314,6 +342,9 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
 
         loss = -logprobas.gather(3, query_targets.unsqueeze(3)).squeeze()
         loss = loss.view(-1).mean()
+
+        if self.pdo_method:
+            update_sampling_matrix(loss)
 
         acc = utils.get_accuracy(logprobas.view(batch_size, nway*nquery, -1),
                                  query_targets.view(batch_size, nway*nquery))

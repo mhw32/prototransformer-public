@@ -36,6 +36,8 @@ class BaseFewShotTextDataset(Dataset):
             split='train',
             roberta_device='cpu',
             fix_seed=42,
+            sampling_method=None,
+            difficulty_matrix=None,
         ):
         super().__init__()
 
@@ -58,11 +60,18 @@ class BaseFewShotTextDataset(Dataset):
         self.mask_index = self.tokenizer.mask_token_id
         self.mask_token = self.tokenizer.mask_token
 
+        # Data for Downsampling Easy Examples
+        self.sampling_method = sampling_method
+
         print('loading data...')
         data, self.classes = self.load_data()
         # NOTE: no side information since we don't have anything special
         # NOTE: no smlmt for simplicitly
         self.tokens, self.masks, self.labels = self.process_data(data)
+
+    def update_sampling(self, new_sampling):
+        self.sampling = new_sampling
+        print(f"SAMPLING IS NOW {self.sampling}")
 
     def update_n_shots(self, new_shots):
         self.n_shots = new_shots
@@ -172,7 +181,13 @@ class BaseFewShotTextDataset(Dataset):
         return data
 
     def __getitem__(self, index):
-        categories = self.rs.choice(self.classes, size=self.n_ways, replace=False)
+        if self.sampling:
+            while True:
+                categories = self.rs.choice(self.classes, size=self.n_ways, replace=False)
+                if self.sampling_method(self.difficulty_matrix, categories):
+                    break
+        else:
+            categories = self.rs.choice(self.classes, size=self.n_ways, replace=False)
         task_tokens = []
         task_masks  = []
         task_labels = []
