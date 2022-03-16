@@ -39,6 +39,22 @@ class BaseNLPMetaAgent(BaseAgent):
         self.test_acc = []
         self.test_acc_stdevs = []
         self.temp = []
+        print("config pdo method: ", self.config.dataset.train.pdo_method)
+        print("PDO METHOD IS: ", self.pdo_method)
+        if self.pdo_method == "downsample":
+            def sampling_method(difficulty_matrix, categories):
+                miss_prob = 0
+                for idx, first_category in categories:
+                    single_miss_prob = 0
+                    for second_category in categories:
+                        if first_category != second_category:
+                            single_miss_prob += (1 - single_miss_prob) * difficulty_matrix[first_category][second_category]
+                    miss_prob += single_miss_prob
+                return np.random.uniform < (miss_prob / len(categories))
+
+            self.sampling_method = sampling_method
+        else:
+            self.sampling_method = None
 
     def _load_datasets(self):
         if self.config.dataset.name == 'newsgroup':
@@ -106,15 +122,7 @@ class BaseNLPMetaAgent(BaseAgent):
 
         # For PDO
         self.train_dataset.update_sampling(True) # DELETE THIS IT'S JUST FOR TESTING
-
-        # Create a category converter (since category numbers are not even)
-        category_converter = {}
-        category_idx = 0
-        for class_num in self.train_dataset.classes:
-            category_converter[class_num] = category_idx
-            category_idx += 1
-        self.category_converter = category_converter
-        self.difficulty_matrix = np.ones((len(self.category_converter), len(self.category_converter))) * 0.5
+        self.difficulty_matrix = np.ones((max(self.train_dataset.classes), max(self.train_dataset.classes))) * 0.5
         self.train_dataset.set_difficulty_matrix(self.difficulty_matrix)
 
     def _load_loaders(self):
