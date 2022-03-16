@@ -317,6 +317,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
 
     def update_sampling_matrix(self, logprobas, targets, nway, nquery):
         """Updates the the difficulty matrix"""
+        print("starting update_sampling_matrix")
 
         # No For loops
         probas = torch.exp(logprobas)
@@ -331,12 +332,12 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         category_indices = targets[:,::nquery]
         indices = torch.vstack((category_indices, self.current_categories - 1))
         values = torch.ones(nway)
-        num_categories = difficulty_matrix.shape[0]
+        num_categories = self.difficulty_matrix.shape[0]
         post_project = torch.sparse_coo_tensor(indices, values, (nway, num_categories)).to_dense()
         pre_project = torch.sparse_coo_tensor(torch.flip(indices, [0]), values, (num_categories, nway)).to_dense()
 
         # Project difficulty matrix down and calculate intermediate_update_val
-        projected_difficulty_matrix = torch.matmul(torch.matmul(post_project, difficulty_matrix), pre_project)
+        projected_difficulty_matrix = torch.matmul(torch.matmul(post_project, self.difficulty_matrix), pre_project)
         intermediate_update_val = ema_alpha * avg_probas - ema_alpha * projected_difficulty_matrix
 
         # Now project back up to the higher space
@@ -346,6 +347,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         self.difficulty_matrix += intermediate_update_val
 
         # NOTE: ADD SELF TO current_categories and difficulty_matrix
+        print("ending update_sampling_matrix")
 
     def compute_loss(self, support_features, support_targets, query_features, query_targets):
         batch_size, nway, nquery, dim = query_features.size()
