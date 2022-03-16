@@ -42,10 +42,11 @@ class BaseNLPMetaAgent(BaseAgent):
         if self.config.dataset.train.pdo_method == "downsample":
             def sampling_method(difficulty_matrix, categories):
                 miss_prob = 0
-                for idx, first_category in enuemrate(categories):
+                for idx, first_category in categories:
                     single_miss_prob = 0
                     for second_category in categories:
-                        single_miss_prob += (1 - single_miss_prob) * difficulty_matrix[first_category, second_category]
+                        if first_category != second_category:
+                            single_miss_prob += (1 - single_miss_prob) * difficulty_matrix[first_category][second_category]
                     miss_prob += single_miss_prob
                 return np.random.uniform < (miss_prob / len(categories))
 
@@ -432,7 +433,9 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         acc_meters = [utils.AverageMeter() for _ in all_task_types]
 
         for batch in self.train_loader:
-            self.current_categories = self.train_loader.current_categories
+            # Getting categories for difficulty_matrix update
+            self.current_categories = self.train_dataset.current_categories
+
             n_shots = self.config.dataset.train.n_shots
             n_queries = self.config.dataset.train.n_queries
             loss, acc, _ = self.forward(batch, n_shots, n_queries)
