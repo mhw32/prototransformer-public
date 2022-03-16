@@ -85,9 +85,6 @@ class BaseFewShotTextDataset(Dataset):
     def set_difficulty_matrix(self, difficulty_matrix):
         self.difficulty_matrix = difficulty_matrix
 
-    def get_current_categories(self):
-        return self.current_categories
-
     def make_classes(self):
         raise NotImplementedError
 
@@ -193,8 +190,6 @@ class BaseFewShotTextDataset(Dataset):
                 categories = self.rs.choice(self.classes, size=self.n_ways, replace=False)
                 if self.sampling_method(self.difficulty_matrix, categories):
                     break
-                # Need this to communicate the categories upward for fixing the difficutly matrix
-                self.current_categories = categories
         else:
             categories = self.rs.choice(self.classes, size=self.n_ways, replace=False)
 
@@ -236,6 +231,7 @@ class BaseFewShotTextDataset(Dataset):
             query_lens=task_lengths[:, -self.n_queries:].long(),
             # --
             task_type=0,
+            categories=categories,
         )
         return task_dict
 

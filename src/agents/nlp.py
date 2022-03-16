@@ -379,6 +379,8 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         query_lens = batch['query_lens'].to(self.device)
         query_masks = batch['query_masks'].to(self.device)
         query_labs = batch['query_labs'].to(self.device)
+        categories = batch['categories'].to(self.device)
+        self.current_categories = categories
 
         batch_size = support_toks.size(0)
         n_ways = support_toks.size(1)
@@ -435,9 +437,6 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         acc_meters = [utils.AverageMeter() for _ in all_task_types]
 
         for batch in self.train_loader:
-            # Getting categories for difficulty_matrix update
-            self.current_categories = self.train_dataset.get_current_categories()
-
             n_shots = self.config.dataset.train.n_shots
             n_queries = self.config.dataset.train.n_queries
             loss, acc, _ = self.forward(batch, n_shots, n_queries)
