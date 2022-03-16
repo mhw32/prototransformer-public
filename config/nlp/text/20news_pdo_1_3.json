@@ -15,7 +15,7 @@
             "n_queries": 3,
             "smlmt_tasks_factor": 0,
             "pdo_method": "downsample",
-            "pdo_patience": 5
+            "pdo_patience": 0
         },
         "test": {
             "n_ways": 5,
