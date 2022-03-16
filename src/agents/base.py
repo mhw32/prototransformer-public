@@ -16,8 +16,8 @@ class BaseAgent(object):
         # Don't want user to always have to provide these arguments
         self.shot_mode = self.config.dataset.train.shot_mode if isinstance(self.config.dataset.train.shot_mode, str) else None
         self.wi_mode = self.config.dataset.train.ways_mode if isinstance(self.config.dataset.train.ways_mode, str) else None
-        self.dropout = self.config.model.hidden_dropout_prob if len(self.config.model.hidden_dropout_prob) else None
-        self.pdo_method = self.config.dataset.train.pdo_method if isinstance(self.config.dataset.train.pdo_method, float) else None
+        self.dropout = self.config.model.hidden_dropout_prob if isinstance(self.config.model.hidden_dropout_prob, float) else None
+        self.pdo_method = self.config.dataset.train.pdo_method if isinstance(self.config.dataset.train.pdo_method, str) else None
 
         self._set_seed()  # set seed as early as possible
 
