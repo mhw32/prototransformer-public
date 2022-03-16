@@ -117,6 +117,7 @@ class BaseNLPMetaAgent(BaseAgent):
             raise Exception(f'Dataset {self.config.dataset.name} not supported.')
 
         # For PDO
+        self.train_dataset.update_sampling(True) # DELETE THIS IT'S JUST FOR TESTING
         self.difficulty_matrix = np.ones((len(self.train_dataset.classes), len(self.train_dataset.classes))) * 0.5
 
     def _load_loaders(self):

@@ -84,6 +84,7 @@ class BaseFewShotTextDataset(Dataset):
 
     def set_difficulty_matrix(self, difficulty_matrix):
         self.difficulty_matrix = difficulty_matrix
+        print(f"UPDATED DIFFICULTY MATRIX")
 
     def make_classes(self):
         raise NotImplementedError
@@ -186,10 +187,12 @@ class BaseFewShotTextDataset(Dataset):
 
     def __getitem__(self, index):
         if self.sampling:
-            while True:
+            for _ in range(10): # Don't get stuck in an infinite loop--if drawing 10 samples, it's likely that the algorithm works super well already
                 categories = self.rs.choice(self.classes, size=self.n_ways, replace=False)
                 if self.sampling_method(self.difficulty_matrix, categories):
                     break
+                else:
+                    print("REJECTED")
         else:
             categories = self.rs.choice(self.classes, size=self.n_ways, replace=False)
 
