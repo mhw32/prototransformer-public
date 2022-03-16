@@ -39,7 +39,8 @@ class BaseNLPMetaAgent(BaseAgent):
         self.test_acc = []
         self.test_acc_stdevs = []
         self.temp = []
-        print(self.pdo_method)
+        print("config pdo method: ", self.config.dataset.train.pdo_method)
+        print("PDO METHOD IS: ", self.pdo_method)
         if self.pdo_method == "downsample":
             def sampling_method(difficulty_matrix, categories):
                 miss_prob = 0
