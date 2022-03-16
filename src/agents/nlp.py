@@ -320,8 +320,8 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
 
         print(logprobas)
         print(targets)
-        print(self.difficulty_matrix)
         print(nway, nquery)
+        print(self.difficulty_matrix)
 
         for idx in range(nway * nquery):
             target = targets[0][idx]
