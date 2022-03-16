@@ -330,7 +330,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         # target: batch_size x n*m
 
         print(loss)
-        print(logprobas.view(batch_size, nway*nquery, -1))
+        print(logprobas)
 
     def compute_loss(self, support_features, support_targets, query_features, query_targets):
         batch_size, nway, nquery, dim = query_features.size()
@@ -344,7 +344,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         loss = loss.view(-1).mean()
 
         if self.pdo_method:
-            self.update_sampling_matrix(loss, logprobas)
+            self.update_sampling_matrix(loss, logprobas.view(batch_size, nway*nquery, -1))
 
         acc = utils.get_accuracy(logprobas.view(batch_size, nway*nquery, -1),
                                  query_targets.view(batch_size, nway*nquery))
