@@ -82,6 +82,9 @@ class BaseFewShotTextDataset(Dataset):
         self.n_ways = new_ways
         print("UPDATED WAYS: ", self.n_ways)
 
+    def current_categories(self):
+        return self.current_categories
+
     def make_classes(self):
         raise NotImplementedError
 
