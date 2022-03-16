@@ -62,6 +62,7 @@ class BaseFewShotTextDataset(Dataset):
 
         # Data for Downsampling Easy Examples
         self.sampling_method = sampling_method
+        self.sampling: = False
 
         print('loading data...')
         data, self.classes = self.load_data()
