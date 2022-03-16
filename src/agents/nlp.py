@@ -321,6 +321,7 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
         print(logprobas)
         print(targets)
         print(nway, nquery)
+        print("self.cURRENT CATEGORIES ", self.current_categories)
         print(self.difficulty_matrix)
 
         for idx in range(nway * nquery):
