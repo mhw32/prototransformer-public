@@ -338,8 +338,8 @@ class NLPPrototypeNetAgent(BaseNLPMetaAgent):
             for query_num in range(nquery):
                 idx = way_num * nquery + query_num
                 target = targets[0][idx]
-                print(self.current_categories)
                 generating_category = self.current_categories[target]
+                print(generating_category)
                 ema_alpha = 1 / (1 + self.current_epoch)
                 for predicted in set(targets[0]):
                     if predicted != target:
