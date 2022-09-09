@@ -19,7 +19,6 @@ from transformers import (
 
 from src.utils import utils
 from src.models.codelstm import CodeLSTMEncoder
-from src.models.contracode import CodeTransformerEncoder
 from src.models.monkeypatch import RobertaModel, RobertaForMaskedLM
 from src.models.context import ContextEncoder, AttentionEncoder
 from src.models.relation import RelationNetwork
@@ -47,7 +46,11 @@ class BaseCodeMetaAgent(BaseAgent):
             roberta_device = f'cuda:{self.config.gpu_device}'
 
         self.train_dataset = MetaExamSolutions(
-            data_root=self.config.data_root,
+            data_root=self.config.dataset.data_root,
+            cache_path=self.config.dataset.cache_path,
+            exam_path=self.config.dataset.exam_path,
+            exam_rubric=self.config.dataset.exam_rubric,
+            exam_prompt=self.config.dataset.exam_prompt,
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
             train=True,
@@ -74,8 +77,13 @@ class BaseCodeMetaAgent(BaseAgent):
             hold_out_category=self.config.dataset.hold_out_category,
             enforce_binary=self.config.dataset.enforce_binary,
         )
+        print("Finished loading train dataset")
         self.test_dataset = MetaExamSolutions(
-            data_root=self.config.data_root,
+            data_root=self.config.dataset.data_root,
+            cache_path=self.config.dataset.cache_path,
+            exam_path=self.config.dataset.exam_path,
+            exam_rubric=self.config.dataset.exam_rubric,
+            exam_prompt=self.config.dataset.exam_prompt,
             n_shots=self.config.dataset.train.n_shots,
             n_queries=self.config.dataset.test.n_queries,
             train=False,
@@ -91,7 +99,6 @@ class BaseCodeMetaAgent(BaseAgent):
             roberta_tokenize=self.config.dataset.roberta_tokenize,
             roberta_config=self.config.model.config,
             roberta_device=roberta_device,
-            pad_to_max_num_class=self.config.optim.batch_size > 1,
             conservative=self.config.dataset.train.conservative,
             cloze_tasks_factor=self.train_dataset.cloze_tasks_factor,
             execution_tasks_factor=self.train_dataset.execution_tasks_factor,
