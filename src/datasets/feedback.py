@@ -120,7 +120,7 @@ class MetaExamSolutions(Dataset):
                 [rubrics], [prompts], [equivalences])
         self.task_classes = task_classes
         self.task_stats = task_stats
-  
+          
         if hold_out_split:
             tasks_in_split = np.array([k for k, v in task_splits.items() if v != train])
             split_indices = np.in1d(tasks, tasks_in_split)
@@ -153,7 +153,7 @@ class MetaExamSolutions(Dataset):
         indices = [index_mapping[index] for index in indices]
         programs = [programs[i] for i in unique_indices]
         traces = [traces[i] for i in unique_indices]
-
+            
         # this is to find equivalent "programs" semantically
         equivalences = remap_equivalences(equivalences, index_mapping)
         equivalences = [equivalences[i] for i in range(len(unique_indices))]
@@ -348,21 +348,26 @@ class MetaExamSolutions(Dataset):
 
     def load_exam_data(self):
         df = pd.read_csv(self.exam_path)
+        df = df[df['examId'].str[:5] == 'cs106'] # adding filtering so that only relevant exams/courses are listed in the first place
+        
         key_df = pd.read_csv(self.exam_rubric)
         question_df = pd.read_csv(self.exam_prompt)
 
+        key_df = key_df.dropna(subset = ['rubric'])
         key_rubrics = list(key_df['rubric'])
         key_rubrics = [json.loads(r) for r in key_rubrics] 
         key_rubrics = dict(zip(list(key_df['id']), key_rubrics))
 
         # merge with questions dataframe
         df = pd.merge(df, question_df, how='left', on=['examId', 'questionId'])
+        df = df.dropna(subset = ['questionText'])
+        df = df[df['questionText'] != 'None']
 
         programs = np.asarray(df['answer'])
         rubrics = np.asarray(df['gradeData'])
         prompts = np.asarray(df['questionText'])
         scores = np.asarray(df['score'])
-
+        
         courses = list(np.unique(df['examId']))
 
         # id isn't work bc its unique
@@ -370,7 +375,7 @@ class MetaExamSolutions(Dataset):
             np.asarray(df['examId']),
             np.asarray(df['questionId']).astype(str))
         ids = np.asarray(df['id'])
-
+        
         if self.hold_out_category == 'exam':
             # reserve some exams for test split
             num_test_courses = max(int((1 - self.train_frac) * len(courses)), 1)
@@ -414,7 +419,7 @@ class MetaExamSolutions(Dataset):
             programs[indices], rubrics[indices], prompts[indices], scores[indices], 
             tasks[indices], ids[indices], is_test[indices], 
         )
-
+        
         print('parsing rubrics...')
         # replace rubrics with string format with key_rubrics
         new_rubrics = []
@@ -484,7 +489,7 @@ class MetaExamSolutions(Dataset):
         # build equivalence maps from index to a set of indices
         # these are programs with the exact same output
         equivalence_maps = build_many_equivalences(tasks, rubrics)
-
+        
         # map tasks to integers
         unique_tasks = sorted(set(tasks))
         task_mapping = dict(zip(unique_tasks, range(len(unique_tasks))))
@@ -503,7 +508,7 @@ class MetaExamSolutions(Dataset):
         task_classes, task_stats, rubric_maps, prompt_maps = \
             construct_tasks_by_rubric(
                 indices, rubrics, prompts, tasks, is_test)
-
+            
         if self.conservative:
             print('removing trivial classes...')
             indices, labels, tasks, questions, task_splits, \
@@ -527,7 +532,7 @@ class MetaExamSolutions(Dataset):
                     make_binary_tasks_liberally(
                         indices, labels, tasks, questions, task_splits, task_classes,
                         task_stats, rubric_maps, prompt_maps)
-
+                    
         return programs, traces, indices, labels, tasks, questions, task_splits, \
                task_classes, task_stats, rubric_maps, prompt_maps, equivalence_maps
 
@@ -1666,7 +1671,6 @@ def construct_tasks_by_rubric(indices, rubrics, prompts, tasks, is_test):
     task_to_stats_mapping = {}
     task_label_to_rubric = {}
     task_to_prompt = {}
-
     for ta in np.unique(tasks):
         task_indices = indices[tasks == ta]
         raw_task_rubrics = rubrics[tasks == ta]
@@ -1687,8 +1691,8 @@ def construct_tasks_by_rubric(indices, rubrics, prompts, tasks, is_test):
             new_task_labels = np.array([r.get(k, False) for r in task_rubrics])
             unique_labels = np.unique(new_task_labels)
             new_task_classes = len(unique_labels)
-            new_task_stats = dict(Counter(new_task_labels))
-            new_task = (np.zeros_like(new_task_labels) + task_cnt).astype(int)
+            new_task_stats = dict(Counter(new_task_labels))            
+            new_task = (np.zeros_like(new_task_labels, dtype='int') + task_cnt).astype(int)
             new_q = np.zeros_like(new_task) + ta
             task_label_to_rubric[task_cnt] = list(task_rmap[k])
 
